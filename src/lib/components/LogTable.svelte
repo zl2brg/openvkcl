@@ -14,7 +14,8 @@
     onedit: (row: QsoRow) => void;
   } = $props();
 
-  let hasNr = $derived(contest.exchange.includes("serial") || contest.exchange.includes("number"));
+  let hasNr = $derived(contest.exchange.includes("serial"));
+  let hasExch = $derived(contest.exchange.includes("number"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let newestFirst = $derived(rows.map((r, i) => ({ r, n: i + 1 })).reverse());
 
@@ -22,7 +23,7 @@
     if (r.invalid) return { text: "INVALID", cls: "bad", title: r.invalid };
     if (r.dupe) return { text: "DUPE", cls: "bad", title: "Duplicate contact" };
     if (r.warning) return { text: "CHECK", cls: "warn", title: r.warning };
-    if (r.new_mult) return { text: `MULT ${r.prefix}`, cls: "mult", title: "New multiplier" };
+    if (r.new_mult) return { text: `MULT ${r.mult}`, cls: "mult", title: "New multiplier" };
     return { text: "", cls: "", title: "" };
   }
 
@@ -62,10 +63,14 @@
           <td>{r.mode}</td>
           <td class="mono call">{r.call}</td>
           <td class="mono">
-            {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasLoc ? ` ${r.sent_locator}` : ""}
+            {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasExch ? ` ${r.sent_exch}` : ""}{hasLoc
+              ? ` ${r.sent_locator}`
+              : ""}
           </td>
           <td class="mono">
-            {r.rcvd_rst}{hasNr ? ` ${r.rcvd_nr}` : ""}{hasLoc ? ` ${r.rcvd_locator}` : ""}
+            {r.rcvd_rst}{hasNr ? ` ${r.rcvd_nr}` : ""}{hasExch ? ` ${r.rcvd_exch}` : ""}{hasLoc
+              ? ` ${r.rcvd_locator}`
+              : ""}
           </td>
           {#if hasLoc}<td class="num">{r.distance_km != null ? r.distance_km.toFixed(0) : ""}</td>{/if}
           <td class="num">{points(r.points)}</td>

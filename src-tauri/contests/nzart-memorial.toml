@@ -1,0 +1,72 @@
+# NZART Memorial Contest (one-night format from 2026)
+# https://nzart.org.nz/activities/contests/memorial-contest/
+#
+# First Saturday in July, 0800-1100 UTC (2000-2300 NZST), three one-hour periods,
+# 80 m only. Cabrillo logs to contests@nzart.org.nz by 31 July.
+id = "nzart-memorial"
+name = "NZART Memorial Contest"
+cabrillo_name = "MEMORIAL-CONTEST"
+rules_url = "https://nzart.org.nz/activities/contests/memorial-contest/"
+duration_minutes = 180
+default_start_utc = "08:00"
+bands = ["80m"]
+modes = ["PH", "CW"]
+exchange = ["rst", "serial"]
+
+# A station may be worked once on SSB and once on CW in each one-hour period.
+[blocks]
+minutes = 60
+
+[rework]
+kind = "block"
+per = ["mode"]
+
+[scoring]
+formula = "points_times_mults"
+
+[scoring.points]
+kind = "fixed"
+base = 1
+mode_points = { PH = 1, CW = 2 }
+
+# Each ZL, VK or other Oceania prefix (ZL1, VK2, ZM4, FK8...) on each mode.
+[multiplier]
+kind = "prefix"
+per = ["mode"]
+only = [
+    "ZL", "ZM", "ZK", "VK", "AX", "VH", "VI", "VJ", "VL", "VM", "VN", "VZ",
+    "3D2", "4W", "5W", "9M6", "9M8", "A3", "C2", "E5", "E6", "FK", "FO", "FW", "H4",
+    "AH", "KH", "NH", "WH", "P2", "T2", "T3", "T8", "V6", "V7", "V8", "VP6",
+    "YB", "YC", "YD", "YE", "YF", "YG", "YH", "YJ",
+    "DU", "DV", "DW", "DX", "DY", "DZ", "4D", "4E", "4F", "4G", "4H", "4I",
+]
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+label = "Operator"
+options = ["SINGLE-OP", "MULTI-OP"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-OVERLAY"
+label = "New operator (licensed less than 36 months; give months in the soapbox)"
+options = ["", "ROOKIE"]
+default = ""
+
+[[categories]]
+key = "CATEGORY-MODE"
+label = "Mode"
+options = ["MIXED", "SSB", "CW"]
+default = "MIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+label = "Power (LOW = Open, 100 W; QRP = 5 W CW / 10 W SSB)"
+options = ["LOW", "QRP"]
+default = "LOW"
+
+[[categories]]
+key = "CATEGORY-BAND"
+label = "Band"
+options = ["80M"]
+default = "80M"

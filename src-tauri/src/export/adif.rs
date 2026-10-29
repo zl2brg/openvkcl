@@ -44,8 +44,9 @@ pub fn render(def: &ContestDef, setup: &LogSetup, qsos: &[Qso], version: &str) -
             field(&mut out, "STX", &q.sent_nr);
             field(&mut out, "SRX", &q.rcvd_nr);
         }
-        field(&mut out, "STX_STRING", &q.sent_nr);
-        field(&mut out, "SRX_STRING", &q.rcvd_nr);
+        let info = |nr: &str, exch: &str| if exch.is_empty() { nr.to_string() } else { exch.to_string() };
+        field(&mut out, "STX_STRING", &info(&q.sent_nr, &q.sent_exch));
+        field(&mut out, "SRX_STRING", &info(&q.rcvd_nr, &q.rcvd_exch));
         field(&mut out, "GRIDSQUARE", &q.rcvd_locator.to_ascii_uppercase());
         field(&mut out, "MY_GRIDSQUARE", &q.sent_locator.to_ascii_uppercase());
         field(&mut out, "STATION_CALLSIGN", &mycall);

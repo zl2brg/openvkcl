@@ -38,6 +38,7 @@
     const c = contests.find((x) => x.id === setup.contest_id);
     if (!c) return;
     startTime = c.default_start_utc;
+    setup.serial_per_band = c.serial_per_band;
     setup.categories = Object.fromEntries(c.categories.map((f) => [f.key, f.default]));
   }
 
@@ -124,7 +125,7 @@
       {#if contest?.exchange.includes("serial")}
         <label class="check">
           <input type="checkbox" bind:checked={setup.serial_per_band} />
-          Separate serial numbers on each band (multi-op)
+          Separate serial numbers on each band
         </label>
       {/if}
 

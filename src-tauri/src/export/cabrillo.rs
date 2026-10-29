@@ -4,12 +4,14 @@ use crate::contest::def::ExchField;
 use crate::contest::engine::Score;
 use crate::model::{LogSetup, Qso};
 
-fn exch(def: &ContestDef, rst: &str, nr: &str, locator: &str) -> String {
+fn exch(def: &ContestDef, rst: &str, nr: &str, number: &str, locator: &str) -> String {
+    let num = |n: &str| format!("{:<4}", if n.is_empty() { "0" } else { n });
     def.exchange
         .iter()
         .map(|f| match f {
             ExchField::Rst => format!("{rst:<3}"),
-            ExchField::Serial | ExchField::Number => format!("{:<4}", if nr.is_empty() { "0" } else { nr }),
+            ExchField::Serial => num(nr),
+            ExchField::Number => num(number),
             ExchField::Locator => format!("{:<6}", locator.to_ascii_uppercase()),
         })
         .collect::<Vec<_>>()
@@ -23,9 +25,9 @@ pub fn qso_line(def: &ContestDef, mycall: &str, q: &Qso) -> String {
         q.mode,
         q.time.format("%Y-%m-%d %H%M"),
         mycall,
-        exch(def, &q.sent_rst, &q.sent_nr, &q.sent_locator),
+        exch(def, &q.sent_rst, &q.sent_nr, &q.sent_exch, &q.sent_locator),
         q.call.to_ascii_uppercase(),
-        exch(def, &q.rcvd_rst, &q.rcvd_nr, &q.rcvd_locator),
+        exch(def, &q.rcvd_rst, &q.rcvd_nr, &q.rcvd_exch, &q.rcvd_locator),
     )
     .trim_end()
     .to_string()
@@ -95,6 +97,8 @@ mod tests {
             rcvd_nr: "12".into(),
             rcvd_locator: "QF56od".into(),
             operator: String::new(),
+            sent_exch: "30".into(),
+            rcvd_exch: "45".into(),
         }
     }
 
@@ -109,7 +113,7 @@ mod tests {
         let rd = defs.iter().find(|d| d.id == "wia-rd").unwrap();
         assert_eq!(
             qso_line(rd, "VK3AAA", &sample("40m", Some(7_090.2))),
-            "QSO:  7090 PH 2026-09-19 0105 VK3AAA        59  1    VK2XYZ        57  12"
+            "QSO:  7090 PH 2026-09-19 0105 VK3AAA        59  30   VK2XYZ        57  45"
         );
     }
 }

@@ -4,7 +4,7 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::path::Path;
 
 const APP_TAG: &str = "openvkcl";
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (
@@ -25,16 +25,20 @@ CREATE TABLE IF NOT EXISTS qso (
     rcvd_nr TEXT NOT NULL DEFAULT '',
     rcvd_locator TEXT NOT NULL DEFAULT '',
     operator TEXT NOT NULL DEFAULT '',
-    deleted INTEGER NOT NULL DEFAULT 0
+    deleted INTEGER NOT NULL DEFAULT 0,
+    sent_exch TEXT NOT NULL DEFAULT '',
+    rcvd_exch TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS qso_call ON qso(call);
 ";
 
 const COLUMNS: &str = "id, time, call, band, mode, freq_khz, sent_rst, sent_nr, sent_locator, \
-                       rcvd_rst, rcvd_nr, rcvd_locator, operator";
+                       rcvd_rst, rcvd_nr, rcvd_locator, operator, sent_exch, rcvd_exch";
 
 pub struct Store {
     conn: Connection,
+    /// Schema version the file had before `open` upgraded it.
+    pub upgraded_from: Option<i64>,
 }
 
 fn err(e: impl std::fmt::Display) -> String {
@@ -64,6 +68,8 @@ fn row_to_qso(row: &Row) -> rusqlite::Result<Qso> {
         rcvd_nr: row.get(10)?,
         rcvd_locator: row.get(11)?,
         operator: row.get(12)?,
+        sent_exch: row.get(13)?,
+        rcvd_exch: row.get(14)?,
     })
 }
 
@@ -74,7 +80,7 @@ impl Store {
         }
         let conn = Connection::open(path).map_err(err)?;
         conn.execute_batch(SCHEMA).map_err(err)?;
-        let store = Store { conn };
+        let store = Store { conn, upgraded_from: None };
         store.set_meta("app", APP_TAG)?;
         store.set_meta("schema", &SCHEMA_VERSION.to_string())?;
         store.save_setup(setup)?;
@@ -86,7 +92,7 @@ impl Store {
             return Err(format!("{} does not exist", path.display()));
         }
         let conn = Connection::open(path).map_err(err)?;
-        let store = Store { conn };
+        let mut store = Store { conn, upgraded_from: None };
         let app = store.meta("app").map_err(|_| "Not an OpenVKCL log file".to_string())?;
         if app.as_deref() != Some(APP_TAG) {
             return Err("Not an OpenVKCL log file".into());
@@ -97,6 +103,19 @@ impl Store {
             .unwrap_or(0);
         if version > SCHEMA_VERSION {
             return Err("This log was created by a newer version of OpenVKCL".into());
+        }
+        if version < 2 {
+            store
+                .conn
+                .execute_batch(
+                    "ALTER TABLE qso ADD COLUMN sent_exch TEXT NOT NULL DEFAULT '';
+                     ALTER TABLE qso ADD COLUMN rcvd_exch TEXT NOT NULL DEFAULT '';",
+                )
+                .map_err(err)?;
+        }
+        if version < SCHEMA_VERSION {
+            store.set_meta("schema", &SCHEMA_VERSION.to_string())?;
+            store.upgraded_from = Some(version);
         }
         let setup = store
             .meta("setup")?
@@ -123,6 +142,17 @@ impl Store {
             .map_err(err)
     }
 
+    /// Version 1 logs kept the `number` field in the serial columns.
+    pub fn move_numbers_to_exch(&self) -> Result<(), String> {
+        self.conn
+            .execute(
+                "UPDATE qso SET sent_exch = sent_nr, rcvd_exch = rcvd_nr, sent_nr = '', rcvd_nr = ''",
+                [],
+            )
+            .map(|_| ())
+            .map_err(err)
+    }
+
     pub fn save_setup(&self, setup: &LogSetup) -> Result<(), String> {
         self.set_meta("setup", &serde_json::to_string(setup).map_err(err)?)
     }
@@ -144,8 +174,8 @@ impl Store {
         self.conn
             .execute(
                 "INSERT INTO qso (time, call, band, mode, freq_khz, sent_rst, sent_nr, sent_locator,
-                                  rcvd_rst, rcvd_nr, rcvd_locator, operator)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                                  rcvd_rst, rcvd_nr, rcvd_locator, operator, sent_exch, rcvd_exch)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
                 params![
                     time_str(&q.time),
                     q.call,
@@ -158,7 +188,9 @@ impl Store {
                     q.rcvd_rst,
                     q.rcvd_nr,
                     q.rcvd_locator,
-                    q.operator
+                    q.operator,
+                    q.sent_exch,
+                    q.rcvd_exch
                 ],
             )
             .map_err(err)?;
@@ -171,7 +203,8 @@ impl Store {
             .execute(
                 "UPDATE qso SET time = ?2, call = ?3, band = ?4, mode = ?5, freq_khz = ?6,
                      sent_rst = ?7, sent_nr = ?8, sent_locator = ?9, rcvd_rst = ?10,
-                     rcvd_nr = ?11, rcvd_locator = ?12, operator = ?13
+                     rcvd_nr = ?11, rcvd_locator = ?12, operator = ?13,
+                     sent_exch = ?14, rcvd_exch = ?15
                  WHERE id = ?1 AND deleted = 0",
                 params![
                     q.id,
@@ -186,7 +219,9 @@ impl Store {
                     q.rcvd_rst,
                     q.rcvd_nr,
                     q.rcvd_locator,
-                    q.operator
+                    q.operator,
+                    q.sent_exch,
+                    q.rcvd_exch
                 ],
             )
             .map_err(err)?;
@@ -246,6 +281,8 @@ mod tests {
             rcvd_nr: "30".into(),
             rcvd_locator: String::new(),
             operator: String::new(),
+            sent_exch: "12".into(),
+            rcvd_exch: "30".into(),
         };
         q.id = store.insert(&q).unwrap();
         q.call = "VK2ABD".into();
@@ -260,6 +297,27 @@ mod tests {
         assert_eq!(qsos.len(), 1);
         assert_eq!(qsos[0].call, "VK2ABD");
         assert_eq!(qsos[0].time, start);
+        assert_eq!(qsos[0].rcvd_exch, "30");
+        assert_eq!(store.upgraded_from, None);
+
+        // A version 1 file: no exch columns, and the number kept in rcvd_nr.
+        store
+            .conn
+            .execute_batch(
+                "ALTER TABLE qso DROP COLUMN sent_exch;
+                 ALTER TABLE qso DROP COLUMN rcvd_exch;
+                 UPDATE meta SET value = '1' WHERE key = 'schema';",
+            )
+            .unwrap();
+        drop(store);
+        let (store, _) = Store::open(&path).unwrap();
+        assert_eq!(store.upgraded_from, Some(1));
+        store.move_numbers_to_exch().unwrap();
+        let qsos = store.qsos().unwrap();
+        assert_eq!((qsos[0].rcvd_nr.as_str(), qsos[0].rcvd_exch.as_str()), ("", "30"));
+        drop(store);
+        let (store, _) = Store::open(&path).unwrap();
+        assert_eq!(store.upgraded_from, None);
         std::fs::remove_dir_all(dir).ok();
     }
 }

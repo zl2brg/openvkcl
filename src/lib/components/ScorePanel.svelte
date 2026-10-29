@@ -129,7 +129,7 @@
               <td class="mono">{hhmm(p.time)}</td>
               <td>{p.band}</td>
               <td>{p.mode}</td>
-              <td class="mono">{p.rcvd_nr} {p.rcvd_locator}</td>
+              <td class="mono">{[p.rcvd_nr, p.rcvd_exch, p.rcvd_locator].filter(Boolean).join(" ")}</td>
             </tr>
           {/each}
         </tbody>

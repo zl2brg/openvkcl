@@ -1,4 +1,4 @@
-use super::def::{Bonus, ContestDef, Dim, ExchField, Formula, Points, ReworkKind};
+use super::def::{Bonus, ContestDef, Dim, ExchField, Formula, MultKind, Points, ReworkKind};
 use crate::model::{LogSetup, Qso};
 use crate::{callsign, geo};
 use chrono::{DateTime, Duration, NaiveTime, Utc};
@@ -14,6 +14,8 @@ pub struct QsoResult {
     pub warning: Option<String>,
     pub points: f64,
     pub new_mult: bool,
+    /// The multiplier this contact counts towards (prefix or branch), if any.
+    pub mult: String,
     pub prefix: String,
     pub block: i64,
     pub distance_km: Option<f64>,
@@ -80,8 +82,13 @@ fn station_invalid(def: &ContestDef, q: &Qso) -> Option<String> {
 
 fn exchange_warning(def: &ContestDef, setup: &LogSetup, q: &Qso) -> Option<String> {
     let mut problems = Vec::new();
-    if (def.has_field(ExchField::Serial) || def.has_field(ExchField::Number))
-        && (q.rcvd_nr.is_empty() || !q.rcvd_nr.chars().all(|c| c.is_ascii_digit()))
+    let numeric = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
+    if def.has_field(ExchField::Serial) && !numeric(&q.rcvd_nr) {
+        problems.push("received serial number missing".to_string());
+    }
+    if def.has_field(ExchField::Number)
+        && callsign::matches_any(&q.call, &def.number_from)
+        && !numeric(&q.rcvd_exch)
     {
         problems.push(format!("received {} missing", def.number_label.to_lowercase()));
     }
@@ -149,10 +156,21 @@ fn basic_points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64
         Points::Fixed {
             base,
             band,
+            mode_points,
+            foreign,
             mode,
             local_time,
         } => {
-            let mut p = band.get(&q.band).copied().unwrap_or(*base);
+            let by_mode = mode_points
+                .get(&q.mode)
+                .or_else(|| mode_points.get(&def.mode_group(&q.mode)));
+            let mut p = band.get(&q.band).or(by_mode).copied().unwrap_or(*base);
+            if let Some(f) = foreign
+                && callsign::matches_any(&setup.station.callsign, &f.home)
+                    != callsign::matches_any(&q.call, &f.home)
+            {
+                p = f.points;
+            }
             p *= mode
                 .get(&q.mode)
                 .or_else(|| mode.get(&def.mode_group(&q.mode)))
@@ -228,12 +246,42 @@ fn dupe_key(def: &ContestDef, q: &Qso, block: i64) -> String {
     key
 }
 
-fn mult_key(def: &ContestDef, q: &Qso, prefix: &str, block: i64) -> Option<String> {
+/// "007" -> "7", "00" -> "0", so branch numbers compare however they were typed.
+fn norm_number(s: &str) -> String {
+    let s = s.trim();
+    let t = s.trim_start_matches('0');
+    if t.is_empty() && !s.is_empty() { "0".into() } else { t.to_string() }
+}
+
+/// The multiplier a contact counts towards, before splitting by band/mode/block.
+fn mult_value(def: &ContestDef, setup: &LogSetup, q: &Qso, prefix: &str) -> Option<String> {
     let m = def.multiplier.as_ref()?;
     if !callsign::matches_any(&q.call, &m.only) {
         return None;
     }
-    let mut key = prefix.to_string();
+    let value = match m.kind {
+        MultKind::Prefix => prefix.to_string(),
+        MultKind::Number => {
+            let n = norm_number(&q.rcvd_exch);
+            if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            if m.not_own && n == norm_number(&setup.sent_number) {
+                return None;
+            }
+            n
+        }
+    };
+    let excluded = m.exclude.iter().any(|x| match m.kind {
+        MultKind::Prefix => x.eq_ignore_ascii_case(&value),
+        MultKind::Number => norm_number(x) == value,
+    });
+    (!excluded).then_some(value)
+}
+
+fn mult_key(def: &ContestDef, q: &Qso, value: &str, block: i64) -> Option<String> {
+    let m = def.multiplier.as_ref()?;
+    let mut key = value.to_string();
     for dim in &m.per {
         key.push('|');
         match dim {
@@ -312,9 +360,12 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
         tally.points += r.points;
         let block_tally = tally.blocks.entry(block).or_default();
         block_tally.0 += r.points;
-        if let Some(mk) = mult_key(def, q, &prefix, block) {
+        if let Some(value) = mult_value(def, setup, q, &prefix)
+            && let Some(mk) = mult_key(def, q, &value, block)
+        {
             block_tally.1.insert(mk.clone());
             r.new_mult = tally.mults.insert(mk);
+            r.mult = value;
         }
         results[i] = r;
     }

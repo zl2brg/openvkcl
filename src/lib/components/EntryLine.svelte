@@ -34,6 +34,7 @@
   let sentRst = $state("");
   let rcvdRst = $state("");
   let rcvdNr = $state("");
+  let rcvdExch = $state("");
   let rcvdLoc = $state("");
   let band = $state("");
   let mode = $state("");
@@ -46,10 +47,12 @@
 
   let callInput: HTMLInputElement | undefined = $state();
   let nrInput: HTMLInputElement | undefined = $state();
+  let exchInput: HTMLInputElement | undefined = $state();
   let locInput: HTMLInputElement | undefined = $state();
   let rstInput: HTMLInputElement | undefined = $state();
 
-  let hasNr = $derived(contest.exchange.includes("serial") || contest.exchange.includes("number"));
+  let hasNr = $derived(contest.exchange.includes("serial"));
+  let hasExch = $derived(contest.exchange.includes("number"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let defaultRst = $derived(mode === "PH" ? "59" : "599");
   let rigDriven = $derived(followRig && rig.connected);
@@ -66,7 +69,7 @@
     freqKhz = rig.freq_hz != null ? rig.freq_hz / 1000 : null;
   });
 
-  /** `useKnown` falls back to the locator last received from this station. */
+  /** `useKnown` falls back to the locator and number last received from this station. */
   function input(useKnown: boolean): QsoInput {
     return {
       time: manualTime ? parseUtcText(timeText) : null,
@@ -77,6 +80,7 @@
       sent_rst: sentRst.trim(),
       rcvd_rst: rcvdRst.trim(),
       rcvd_nr: rcvdNr.trim(),
+      rcvd_exch: rcvdExch.trim() || (useKnown ? check?.known_exch : "") || "",
       rcvd_locator: rcvdLoc.trim() || (useKnown ? check?.known_locator : "") || "",
     };
   }
@@ -102,6 +106,7 @@
     call = "";
     rcvdRst = "";
     rcvdNr = "";
+    rcvdExch = "";
     rcvdLoc = "";
     error = "";
     untrack(() => callInput?.focus());
@@ -125,7 +130,13 @@
   }
 
   function fieldOrder(): HTMLInputElement[] {
-    return [callInput, hasNr ? nrInput : undefined, hasLoc ? locInput : undefined, rstInput].filter(
+    return [
+      callInput,
+      hasNr ? nrInput : undefined,
+      hasExch ? exchInput : undefined,
+      hasLoc ? locInput : undefined,
+      rstInput,
+    ].filter(
       (x): x is HTMLInputElement => !!x,
     );
   }
@@ -157,7 +168,12 @@
   }
 
   let sentText = $derived(
-    [sentRst || defaultRst, hasNr ? check?.sent_nr : "", hasLoc ? setup.station.locator.toUpperCase() : ""]
+    [
+      sentRst || defaultRst,
+      hasNr ? check?.sent_nr : "",
+      hasExch ? setup.sent_number : "",
+      hasLoc ? setup.station.locator.toUpperCase() : "",
+    ]
       .filter(Boolean)
       .join(" "),
   );
@@ -205,8 +221,21 @@
     </label>
     {#if hasNr}
       <label class="nr">
-        {contest.number_label}
+        Nr
         <input class="mono" bind:this={nrInput} bind:value={rcvdNr} inputmode="numeric" autocomplete="off" />
+      </label>
+    {/if}
+    {#if hasExch}
+      <label class="nr">
+        {contest.number_label}
+        <input
+          class="mono"
+          bind:this={exchInput}
+          bind:value={rcvdExch}
+          placeholder={check?.known_exch ?? ""}
+          inputmode="numeric"
+          autocomplete="off"
+        />
       </label>
     {/if}
     {#if hasLoc}
@@ -252,7 +281,7 @@
         <span class="ok strong">OK</span>
         <span>{r.points.toFixed(r.points % 1 ? 1 : 0)} pts</span>
         {#if r.distance_km != null}<span>{r.distance_km.toFixed(0)} km</span>{/if}
-        {#if r.new_mult}<span class="mult">NEW MULT {r.prefix}</span>{/if}
+        {#if r.new_mult}<span class="mult">NEW MULT {r.mult}</span>{/if}
         {#if r.warning}<span class="warn">{r.warning}</span>{/if}
       {/if}
     {:else}

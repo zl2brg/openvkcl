@@ -21,10 +21,12 @@ export interface ContestDef {
   mode_groups: Record<string, string>;
   exchange: ExchField[];
   number_label: string;
+  number_from: string[];
+  serial_per_band: boolean;
   workable: string[];
   blocks: { minutes: number } | null;
   sessions: { start_minute: number; minutes: number }[];
-  multiplier: { kind: "prefix"; per: string[]; only: string[] } | null;
+  multiplier: { kind: "prefix" | "number"; per: string[]; only: string[]; exclude: string[]; not_own: boolean } | null;
   rework: { kind: "never" | "block" | "interval"; minutes: number; per: string[]; new_square_resets: boolean };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
@@ -70,6 +72,8 @@ export interface Qso {
   rcvd_nr: string;
   rcvd_locator: string;
   operator: string;
+  sent_exch: string;
+  rcvd_exch: string;
 }
 
 export interface QsoResult {
@@ -78,6 +82,7 @@ export interface QsoResult {
   warning: string | null;
   points: number;
   new_mult: boolean;
+  mult: string;
   prefix: string;
   block: number;
   distance_km: number | null;
@@ -120,6 +125,7 @@ export interface QsoInput {
   sent_rst: string;
   rcvd_rst: string;
   rcvd_nr: string;
+  rcvd_exch: string;
   rcvd_locator: string;
 }
 
@@ -127,6 +133,7 @@ export interface CheckResult {
   result: QsoResult;
   sent_nr: string;
   known_locator: string | null;
+  known_exch: string | null;
   previous: QsoRow[];
 }
 

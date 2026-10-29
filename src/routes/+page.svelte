@@ -107,7 +107,7 @@
       start: new Date(`${date}T${contest?.default_start_utc ?? "00:00"}:00Z`).toISOString(),
       station: settings ? { ...settings.station } : emptyStation(),
       sent_number: "",
-      serial_per_band: false,
+      serial_per_band: contest?.serial_per_band ?? false,
       utc_offset_minutes: -today.getTimezoneOffset(),
       location: "",
       categories: Object.fromEntries((contest?.categories ?? []).map((c) => [c.key, c.default])),

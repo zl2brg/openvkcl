@@ -1,0 +1,83 @@
+# NZART Jock White Memorial Field Day (rules last updated 21 April 2025)
+# https://nzart.org.nz/activities/contests/jwfd/
+#
+# Last full weekend in February: Saturday 1500-2400 and Sunday 0600-1500 NZDT,
+# i.e. 0200-1100 and 1700-0200 UTC from the Saturday. 18 one-hour periods.
+# Logs are posted, one sheet per band, with a summary sheet.
+id = "nzart-jwmfd"
+name = "NZART Jock White Memorial Field Day"
+cabrillo_name = "NZART-JWMFD"
+rules_url = "https://nzart.org.nz/activities/contests/jwfd/"
+duration_minutes = 1440
+default_start_utc = "02:00"
+bands = ["80m", "40m"]
+modes = ["PH", "CW"]
+exchange = ["rst", "serial", "number"]
+number_label = "Branch"
+# Overseas (Oceania) stations send RST and serial only.
+number_from = ["ZL", "ZM"]
+# Two-band stations must use a separate serial series on each band.
+serial_per_band = true
+
+[[sessions]]
+start_minute = 0
+minutes = 540
+
+[[sessions]]
+start_minute = 900
+minutes = 540
+
+# Each hour is a period: a station may be worked once per period on each mode on each band.
+[blocks]
+minutes = 60
+
+[rework]
+kind = "block"
+per = ["band", "mode"]
+
+[scoring]
+formula = "points_times_mults"
+
+[scoring.points]
+kind = "fixed"
+base = 3
+mode_points = { PH = 3, CW = 5 }
+
+# Each branch once per band and mode (up to four per branch). Home stations send
+# 00, which isn't a branch; stations with your own branch number score points only.
+[multiplier]
+kind = "number"
+per = ["band", "mode"]
+exclude = ["00"]
+not_own = true
+
+[[categories]]
+key = "SECTION"
+label = "Entry section (one only)"
+options = [
+    "NORTHERN REGION",
+    "CENTRAL REGION",
+    "MIDLANDS REGION",
+    "SOUTHERN REGION",
+    "SINGLE OPERATOR",
+    "CW ONLY",
+    "PHONE ONLY",
+    "80M ONLY",
+    "SINGLE TRANSMITTER 40M AND 80M",
+    "QRP",
+    "HOME STATION",
+    "OVERSEAS OCEANIA",
+]
+default = "NORTHERN REGION"
+
+[[categories]]
+key = "CATEGORY-TRANSMITTER"
+label = "Transmitters"
+options = ["ONE", "TWO"]
+default = "ONE"
+
+[[categories]]
+key = "CATEGORY-POWER"
+label = "Power (QRP = 5 W CW / 10 W SSB)"
+options = ["LOW", "QRP"]
+default = "LOW"

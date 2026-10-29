@@ -15,6 +15,9 @@ const BUILTIN: &[(&str, &str)] = &[
     ("nzart-vhf-lowband.toml", include_str!("../../contests/nzart-vhf-lowband.toml")),
     ("nzart-vhf-microwave.toml", include_str!("../../contests/nzart-vhf-microwave.toml")),
     ("nzart-vhf-fd.toml", include_str!("../../contests/nzart-vhf-fd.toml")),
+    ("nzart-jwmfd.toml", include_str!("../../contests/nzart-jwmfd.toml")),
+    ("nzart-memorial.toml", include_str!("../../contests/nzart-memorial.toml")),
+    ("nzart-sangster.toml", include_str!("../../contests/nzart-sangster.toml")),
 ];
 
 pub fn parse(name: &str, text: &str) -> Result<ContestDef, String> {
@@ -102,6 +105,8 @@ mod tests {
             rcvd_nr: "1".into(),
             rcvd_locator: String::new(),
             operator: String::new(),
+            sent_exch: String::new(),
+            rcvd_exch: "1".into(),
         }
     }
 
@@ -283,9 +288,107 @@ mod tests {
 
         let sheet = crate::export::scoresheet::render(&d, &s, &qsos, &e);
         assert!(sheet.contains("Bonuses applied,QRP x1.5 PORTABLE x1.2\r\n"));
-        assert!(sheet.contains("2027-02-13,0405,ZL1AAA,PH,59,2,59,1,RF73JB,,0,2,Dupe\r\n"));
+        assert!(sheet.contains("2027-02-13,0405,1,ZL1AAA,PH,59,2,59,1,RF73JB,,0,2,Dupe\r\n"));
         assert!(sheet.contains("Band total,2m,94\r\n"));
         assert!(sheet.ends_with("Claimed score,185\r\n"));
+    }
+
+    fn hf(id: i64, t: DateTime<Utc>, call: &str, band: &str, mode: &str, branch: &str) -> Qso {
+        let mut q = qso(id, t, call, band, mode);
+        q.sent_exch = "10".into();
+        q.rcvd_exch = branch.into();
+        q
+    }
+
+    #[test]
+    fn jock_white_periods_and_branches() {
+        let d = def("nzart-jwmfd");
+        assert!(d.serial_per_band);
+        // 0200 UTC = 1500 NZDT.
+        let start = Utc.with_ymd_and_hms(2027, 2, 27, 2, 0, 0).unwrap();
+        let mut s = setup("nzart-jwmfd", start);
+        s.station.callsign = "ZL2ZZZ".into();
+        let m = |n| start + Duration::minutes(n);
+        let qsos = vec![
+            hf(1, m(1), "ZL2AAA", "80m", "PH", "25"),  // 3, mult 25 80m PH
+            hf(2, m(2), "ZL2AAA", "80m", "PH", "25"),  // dupe this hour
+            hf(3, m(3), "ZL2AAA", "80m", "CW", "25"),  // 5, mult 25 80m CW
+            hf(4, m(4), "ZL2AAA", "40m", "PH", "25"),  // 3, mult 25 40m PH
+            hf(5, m(61), "ZL2AAA", "80m", "PH", "25"), // next hour: 3
+            hf(6, m(62), "ZL2BBB", "80m", "PH", "25"), // same branch: 3, no mult
+            hf(7, m(63), "ZL3CCC", "80m", "PH", "10"), // own branch: 3, no mult
+            hf(8, m(64), "ZL4DDD", "80m", "PH", "00"), // home station: 3, no mult
+            hf(9, m(65), "VK2XYZ", "80m", "CW", ""),   // overseas, no branch: 5
+            hf(10, m(66), "ZL1EEE", "80m", "CW", ""),  // branch missing: 5, warned
+            hf(11, m(600), "ZL1FFF", "80m", "PH", "030"), // between periods: 3, mult 30
+        ];
+        let e = evaluate(&d, &s, &qsos);
+        let pts: Vec<f64> = e.results.iter().map(|r| r.points).collect();
+        assert_eq!(pts, vec![3.0, 0.0, 5.0, 3.0, 3.0, 3.0, 3.0, 3.0, 5.0, 5.0, 3.0]);
+        let mults: Vec<bool> = e.results.iter().map(|r| r.new_mult).collect();
+        assert_eq!(mults, vec![true, false, true, true, false, false, false, false, false, false, true]);
+        assert_eq!(e.results[0].mult, "25");
+        assert_eq!(e.results[10].mult, "30");
+        assert!(e.results[1].dupe);
+        assert_eq!(e.results[1].next_ok, Some(m(60)));
+        assert!(e.results[8].warning.is_none());
+        assert!(e.results[9].warning.as_deref().unwrap().contains("branch missing"));
+        assert!(e.results[10].warning.as_deref().unwrap().contains("operating periods"));
+        // 36 points x 4 branch multipliers.
+        assert_eq!(e.score.total, 144.0);
+
+        let sheet = crate::export::scoresheet::render(&d, &s, &qsos, &e);
+        assert!(sheet.contains(
+            "Date,Time UTC,Period,Call,Mode,Sent RST,Sent Nr,Sent Branch,Rcvd RST,Rcvd Nr,Rcvd Branch,Points,Running total,New mult,Note\r\n"
+        ));
+        assert!(sheet.contains("2027-02-27,0302,2,ZL2BBB,PH,59,6,10,59,1,25,3,14,,\r\n"));
+        assert!(sheet.contains("80m,CW,3,15,1\r\n"));
+    }
+
+    #[test]
+    fn sangster_half_hours_and_overseas_points() {
+        let d = def("nzart-sangster");
+        let start = Utc.with_ymd_and_hms(2027, 5, 15, 8, 0, 0).unwrap();
+        let mut s = setup("nzart-sangster", start);
+        s.station.callsign = "ZL2ZZZ".into();
+        let m = |n| start + Duration::minutes(n);
+        let qsos = vec![
+            hf(1, m(1), "ZL1AAA", "80m", "CW", "05"), // 5, mult 5
+            hf(2, m(20), "ZL1AAA", "80m", "CW", "5"), // dupe this half hour
+            hf(3, m(31), "ZL1AAA", "80m", "CW", "5"), // 5
+            hf(4, m(32), "VK2XYZ", "80m", "CW", ""),  // overseas: 10
+            hf(5, m(33), "ZL3BBB", "80m", "CW", "10"), // own branch: 5, no mult
+            hf(6, m(34), "ZL4CCC", "80m", "CW", "7"), // 5, mult 7
+        ];
+        let e = evaluate(&d, &s, &qsos);
+        let pts: Vec<f64> = e.results.iter().map(|r| r.points).collect();
+        assert_eq!(pts, vec![5.0, 0.0, 5.0, 10.0, 5.0, 5.0]);
+        assert_eq!(e.results[1].next_ok, Some(m(30)));
+        assert!(e.results[3].warning.is_none());
+        assert_eq!(e.score.total, 30.0 * 2.0);
+    }
+
+    #[test]
+    fn memorial_modes_and_oceania_mults() {
+        let d = def("nzart-memorial");
+        let start = Utc.with_ymd_and_hms(2027, 7, 3, 8, 0, 0).unwrap();
+        let mut s = setup("nzart-memorial", start);
+        s.station.callsign = "ZL2ZZZ".into();
+        let m = |n| start + Duration::minutes(n);
+        let qsos = vec![
+            qso(1, m(1), "ZL1AAA", "80m", "PH"),  // 1, mult ZL1 PH
+            qso(2, m(5), "ZL1AAA", "80m", "CW"),  // 2, mult ZL1 CW
+            qso(3, m(10), "ZL1AAA", "80m", "PH"), // dupe
+            qso(4, m(61), "ZL1AAA", "80m", "PH"), // next hour: 1
+            qso(5, m(62), "VK2ABC", "80m", "CW"), // 2, mult VK2 CW
+            qso(6, m(63), "JA1ABC", "80m", "PH"), // 1, not Oceania
+            qso(7, m(64), "FK8XX", "80m", "PH"),  // 1, mult FK8 PH
+        ];
+        let e = evaluate(&d, &s, &qsos);
+        let pts: Vec<f64> = e.results.iter().map(|r| r.points).collect();
+        assert_eq!(pts, vec![1.0, 2.0, 0.0, 1.0, 2.0, 1.0, 1.0]);
+        assert!(!e.results[5].new_mult && e.results[6].new_mult);
+        assert_eq!(e.score.total, 8.0 * 4.0);
     }
 
     #[test]

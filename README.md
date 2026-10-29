@@ -9,6 +9,9 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 
 - WIA contests: Remembrance Day, Trans-Tasman Low-Band, Harry Angel Sprint,
   John Moyle Memorial Field Day and the VHF-UHF Field Days.
+- NZART HF contests: Jock White Memorial Field Day, Memorial Contest and
+  Sangster Shield, with their one-hour (or half-hour) periods, separate serial
+  numbers per band, and branch-number multipliers.
 - NZART VHF-UHF-SHF-EHF contests: DX Weekend, Low Band, Microwave and Field Day,
   with hourly periods, the Table 1 distance scores, points per km above 70 cm,
   and the machine-mode, QRP and field-station multipliers.
@@ -32,10 +35,16 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 4. Double-click a contact in the log to edit or delete it.
 5. **Cabrillo…** previews the log and saves it for upload to
    [vklogchecker.com](https://www.vklogchecker.com).
-6. For the NZART VHF contests, **Score sheet** writes the per-band log sheets
-   the rules ask for. Email it with your station details and signed declaration
-   to vhfcontest@nzart.org.nz within two weeks. Set *Power* to QRP and
-   *Station* to PORTABLE (field station) in the setup to claim those multipliers.
+6. **Score sheet** writes per-band log sheets (CSV) with the period, points,
+   running total and new multipliers for each contact, plus a band and mode
+   summary - what the Jock White Field Day summary sheet and the NZART VHF
+   contests ask for. For the VHF contests, email it with your station details
+   and signed declaration to vhfcontest@nzart.org.nz within two weeks, and set
+   *Power* to QRP and *Station* to PORTABLE (field station) in the setup to
+   claim those multipliers.
+
+In contests that exchange an NZART branch number, the branch box fills in from
+your last contact with that station, so you only type it once.
 
 ### Radio control
 

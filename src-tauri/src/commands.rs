@@ -95,10 +95,12 @@ pub struct ContestList {
 #[derive(Serialize)]
 pub struct CheckResult {
     result: QsoResult,
-    /// Sent serial or number this contact would use.
+    /// Sent serial this contact would use.
     sent_nr: String,
     /// Locator last received from this station.
     known_locator: Option<String>,
+    /// `number` field (e.g. branch) last received from this station.
+    known_exch: Option<String>,
     previous: Vec<QsoRow>,
 }
 
@@ -130,8 +132,6 @@ fn next_sent_nr(log: &OpenLog, band: &str) -> String {
             .max()
             .unwrap_or(0);
         (max + 1).to_string()
-    } else if log.def.has_field(ExchField::Number) {
-        log.setup.sent_number.clone()
     } else {
         String::new()
     }
@@ -168,6 +168,12 @@ fn draft_qso(log: &OpenLog, input: &QsoInput) -> Qso {
         rcvd_nr: input.rcvd_nr.trim().to_string(),
         rcvd_locator: geo::normalize_locator(&input.rcvd_locator),
         operator: String::new(),
+        sent_exch: if log.def.has_field(ExchField::Number) {
+            log.setup.sent_number.trim().to_string()
+        } else {
+            String::new()
+        },
+        rcvd_exch: input.rcvd_exch.trim().to_string(),
     }
 }
 
@@ -224,6 +230,12 @@ pub fn open_log(state: State<AppState>, path: String) -> CmdResult<LogView> {
     let path = PathBuf::from(path);
     let (store, setup) = Store::open(&path)?;
     let def = state.find_contest(&setup.contest_id)?;
+    if store.upgraded_from.is_some_and(|v| v < 2)
+        && def.has_field(ExchField::Number)
+        && !def.has_field(ExchField::Serial)
+    {
+        store.move_numbers_to_exch()?;
+    }
     let qsos = store.qsos()?;
     let log = OpenLog {
         path: path.clone(),
@@ -275,6 +287,17 @@ pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<CheckResu
         {
             draft.rcvd_locator = loc.clone();
         }
+        let known_exch = log
+            .qsos
+            .iter()
+            .rev()
+            .find(|q| q.call == call && !q.rcvd_exch.is_empty())
+            .map(|q| q.rcvd_exch.clone());
+        if draft.rcvd_exch.is_empty()
+            && let Some(x) = &known_exch
+        {
+            draft.rcvd_exch = x.clone();
+        }
         let result = engine::check(&log.def, &log.setup, &log.qsos, &draft);
         let eval = engine::evaluate(&log.def, &log.setup, &log.qsos);
         let previous = log
@@ -289,6 +312,7 @@ pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<CheckResu
             result,
             sent_nr: draft.sent_nr,
             known_locator,
+            known_exch,
             previous,
         })
     })

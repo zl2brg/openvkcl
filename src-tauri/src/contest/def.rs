@@ -20,8 +20,15 @@ pub struct ContestDef {
     #[serde(default)]
     pub mode_groups: BTreeMap<String, String>,
     pub exchange: Vec<ExchField>,
+    /// Name of the `number` field, e.g. "Branch".
     #[serde(default = "default_number_label")]
     pub number_label: String,
+    /// Prefixes of stations that send the `number` field. Empty means everyone.
+    #[serde(default)]
+    pub number_from: Vec<String>,
+    /// New logs default to a separate serial number series on each band.
+    #[serde(default)]
+    pub serial_per_band: bool,
     /// Prefixes (e.g. "VK", "ZL") of stations that may be worked. Empty means anyone.
     #[serde(default)]
     pub workable: Vec<String>,
@@ -51,7 +58,9 @@ fn default_number_label() -> String {
 pub enum ExchField {
     Rst,
     Serial,
-    /// A fixed number chosen at setup, e.g. years licensed in the Remembrance Day contest.
+    /// A fixed number chosen at setup, e.g. years licensed in the Remembrance Day
+    /// contest or an NZART branch number. Stored apart from the serial, so a
+    /// contest can use both.
     Number,
     Locator,
 }
@@ -162,6 +171,12 @@ pub enum Points {
         /// Per-band points; bands not listed score `base`.
         #[serde(default)]
         band: BTreeMap<String, f64>,
+        /// Per-mode points, used instead of `base`, e.g. PH 3 and CW 5.
+        #[serde(default)]
+        mode_points: BTreeMap<String, f64>,
+        /// Contacts between a home-country station and an overseas one score differently.
+        #[serde(default)]
+        foreign: Option<Foreign>,
         /// Per-mode multiplying factor.
         #[serde(default)]
         mode: BTreeMap<String, f64>,
@@ -201,6 +216,13 @@ fn hundred() -> f64 {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Foreign {
+    /// Prefixes of the home country, e.g. ["ZL", "ZM"].
+    pub home: Vec<String>,
+    pub points: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalTimeBonus {
     pub from: String,
     pub to: String,
@@ -210,7 +232,10 @@ pub struct LocalTimeBonus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MultKind {
+    /// WPX-style callsign prefix.
     Prefix,
+    /// The received `number` field, e.g. NZART branch.
+    Number,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,9 +243,15 @@ pub struct Multiplier {
     pub kind: MultKind,
     #[serde(default)]
     pub per: Vec<Dim>,
-    /// Prefixes that count as multipliers. Empty means all.
+    /// Prefixes of stations that count as multipliers. Empty means all.
     #[serde(default)]
     pub only: Vec<String>,
+    /// Values that never count, e.g. branch "00" for home stations.
+    #[serde(default)]
+    pub exclude: Vec<String>,
+    /// Your own `number` (e.g. your own branch) doesn't count.
+    #[serde(default)]
+    pub not_own: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -292,6 +323,12 @@ impl ContestDef {
         }
         if self.rework.kind == ReworkKind::Block && self.blocks.is_none() {
             return Err(format!("{}: block rework needs [blocks]", self.id));
+        }
+        if let Some(m) = &self.multiplier
+            && m.kind == MultKind::Number
+            && !self.has_field(ExchField::Number)
+        {
+            return Err(format!("{}: number multipliers need a number in the exchange", self.id));
         }
         for s in &self.sessions {
             if s.start_minute < 0 || s.minutes <= 0 || s.start_minute + s.minutes > self.duration_minutes {

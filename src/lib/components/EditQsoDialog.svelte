@@ -32,10 +32,13 @@
     rcvd_nr: r.rcvd_nr,
     rcvd_locator: r.rcvd_locator,
     operator: r.operator,
+    sent_exch: r.sent_exch,
+    rcvd_exch: r.rcvd_exch,
   });
   let timeText = $state(utcText(r.time));
   let error = $state("");
-  let hasNr = $derived(contest.exchange.includes("serial") || contest.exchange.includes("number"));
+  let hasNr = $derived(contest.exchange.includes("serial"));
+  let hasExch = $derived(contest.exchange.includes("number"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
 
   function save() {
@@ -73,13 +76,15 @@
     <h3>Sent</h3>
     <div class="row three">
       <label>RST <input class="mono" bind:value={qso.sent_rst} /></label>
-      {#if hasNr}<label>{contest.number_label} <input class="mono" bind:value={qso.sent_nr} /></label>{/if}
+      {#if hasNr}<label>Nr <input class="mono" bind:value={qso.sent_nr} /></label>{/if}
+      {#if hasExch}<label>{contest.number_label} <input class="mono" bind:value={qso.sent_exch} /></label>{/if}
       {#if hasLoc}<label>Locator <input class="mono" bind:value={qso.sent_locator} maxlength="10" /></label>{/if}
     </div>
     <h3>Received</h3>
     <div class="row three">
       <label>RST <input class="mono" bind:value={qso.rcvd_rst} /></label>
-      {#if hasNr}<label>{contest.number_label} <input class="mono" bind:value={qso.rcvd_nr} /></label>{/if}
+      {#if hasNr}<label>Nr <input class="mono" bind:value={qso.rcvd_nr} /></label>{/if}
+      {#if hasExch}<label>{contest.number_label} <input class="mono" bind:value={qso.rcvd_exch} /></label>{/if}
       {#if hasLoc}<label>Locator <input class="mono" bind:value={qso.rcvd_locator} maxlength="10" /></label>{/if}
     </div>
     {#if error}<p class="error">{error}</p>{/if}

@@ -17,7 +17,7 @@
 
   let config = $state<RigConfig>(untrack(() => $state.snapshot(initial)) as RigConfig);
 
-  const defaultPorts: Record<RigKind, number> = { none: 0, rigctld: 4532, flrig: 12345 };
+  const defaultPorts: Record<RigKind, number> = { none: 0, rigctld: 4532, flrig: 12345, tci: 50001 };
 
   function kindChanged() {
     if (config.kind !== "none") config.port = defaultPorts[config.kind];
@@ -32,6 +32,7 @@
         <option value="none">No radio (manual band and mode)</option>
         <option value="rigctld">Hamlib rigctld</option>
         <option value="flrig">FLRig</option>
+        <option value="tci">TCI (cudaSDR, ExpertSDR, Thetis)</option>
       </select>
     </label>
     {#if config.kind !== "none"}
@@ -39,11 +40,23 @@
         <label>Host <input bind:value={config.host} /></label>
         <label>Port <input type="number" bind:value={config.port} min="1" max="65535" /></label>
       </div>
-      <label>
-        Poll interval (ms)
-        <input type="number" bind:value={config.poll_ms} min="100" max="5000" step="100" />
-      </label>
-      {#if config.kind === "rigctld"}
+      {#if config.kind === "tci"}
+        <label class="check">
+          <input type="checkbox" bind:checked={config.spots} />
+          Mark logged contacts on the SDR's band display
+        </label>
+      {:else}
+        <label>
+          Poll interval (ms)
+          <input type="number" bind:value={config.poll_ms} min="100" max="5000" step="100" />
+        </label>
+      {/if}
+      {#if config.kind === "tci"}
+        <p class="hint">
+          Enable the TCI server in your SDR software. cudaSDR listens on port 50001, ExpertSDR on 40001.
+          The SDR pushes frequency and mode changes, so the entry line follows the radio instantly.
+        </p>
+      {:else if config.kind === "rigctld"}
         <p class="hint">
           Start Hamlib's network daemon for your radio first, e.g.
           <code>rigctld -m 3073 -r /dev/ttyUSB0 -s 19200</code> (on Windows use the COM port, e.g. <code>-r COM3</code>).
@@ -84,6 +97,11 @@
     flex-direction: column;
     gap: 3px;
     font-size: 0.85rem;
+  }
+  label.check {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
   }
   .row {
     display: grid;

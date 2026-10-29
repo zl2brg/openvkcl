@@ -1,0 +1,7 @@
+# Logs and exports written while the app runs must not trigger a rebuild.
+*.ovkcl
+*.ovkcl-journal
+*.csv
+*.adi
+*.cbr
+*.log

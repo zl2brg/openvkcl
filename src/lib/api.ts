@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { timeZone } from "./timezone.svelte";
 
 export type ExchField = "rst" | "serial" | "number" | "locator";
 
@@ -26,8 +27,19 @@ export interface ContestDef {
   workable: string[];
   blocks: { minutes: number } | null;
   sessions: { start_minute: number; minutes: number }[];
-  multiplier: { kind: "prefix" | "number"; per: string[]; only: string[]; exclude: string[]; not_own: boolean } | null;
-  rework: { kind: "never" | "block" | "interval"; minutes: number; per: string[]; new_square_resets: boolean };
+  multiplier: {
+    kind: "prefix" | "number";
+    per: string[];
+    only: string[];
+    exclude: string[];
+    not_own: boolean;
+  } | null;
+  rework: {
+    kind: "never" | "block" | "interval";
+    minutes: number;
+    per: string[];
+    new_square_resets: boolean;
+  };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
 }
@@ -137,13 +149,14 @@ export interface CheckResult {
   previous: QsoRow[];
 }
 
-export type RigKind = "none" | "rigctld" | "flrig";
+export type RigKind = "none" | "rigctld" | "flrig" | "tci";
 
 export interface RigConfig {
   kind: RigKind;
   host: string;
   port: number;
   poll_ms: number;
+  spots: boolean;
 }
 
 export interface RigStatus {
@@ -170,8 +183,10 @@ export interface ContestList {
 export const api = {
   listContests: () => invoke<ContestList>("list_contests"),
   getSettings: () => invoke<Settings>("get_settings"),
-  saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),
-  newLog: (path: string, setup: LogSetup) => invoke<LogView>("new_log", { path, setup }),
+  saveSettings: (settings: Settings) =>
+    invoke<void>("save_settings", { settings }),
+  newLog: (path: string, setup: LogSetup) =>
+    invoke<LogView>("new_log", { path, setup }),
   openLog: (path: string) => invoke<LogView>("open_log", { path }),
   closeLog: () => invoke<void>("close_log"),
   getLog: () => invoke<LogView | null>("get_log"),
@@ -183,7 +198,8 @@ export const api = {
   cabrilloText: () => invoke<string>("cabrillo_text"),
   exportCabrillo: (path: string) => invoke<void>("export_cabrillo", { path }),
   exportAdif: (path: string) => invoke<void>("export_adif", { path }),
-  exportScoreSheet: (path: string) => invoke<void>("export_score_sheet", { path }),
+  exportScoreSheet: (path: string) =>
+    invoke<void>("export_score_sheet", { path }),
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),
   rigDisconnect: () => invoke<void>("rig_disconnect"),
   rigStatus: () => invoke<RigStatus>("rig_status"),
@@ -208,23 +224,57 @@ export function emptyStation(): Station {
   };
 }
 
-/** "2026-08-15T03:05:00Z" -> "0305". */
+/** "UTC" or "local", for labelling times shown with the helpers below. */
+export function zoneLabel(): string {
+  return timeZone.local ? "local" : "UTC";
+}
+
+function parts(d: Date) {
+  return timeZone.local
+    ? [
+        d.getFullYear(),
+        d.getMonth() + 1,
+        d.getDate(),
+        d.getHours(),
+        d.getMinutes(),
+        d.getSeconds(),
+      ]
+    : [
+        d.getUTCFullYear(),
+        d.getUTCMonth() + 1,
+        d.getUTCDate(),
+        d.getUTCHours(),
+        d.getUTCMinutes(),
+        d.getUTCSeconds(),
+      ];
+}
+
+/** "2026-08-15T03:05:00Z" -> "0305", in the display time zone. */
 export function hhmm(iso: string): string {
-  const d = new Date(iso);
-  return `${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}`;
+  const [, , , h, m] = parts(new Date(iso));
+  return `${pad(h)}${pad(m)}`;
 }
 
-/** "2026-08-15T03:05:00Z" -> "2026-08-15 03:05". */
-export function utcText(iso: string): string {
-  const d = new Date(iso);
-  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+/** "13:05:09" in the display time zone. */
+export function clockText(d: Date): string {
+  const [, , , h, m, s] = parts(d);
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
-/** Parse "YYYY-MM-DD HH:MM" (UTC) to an ISO string, or null if malformed. */
-export function parseUtcText(text: string): string | null {
-  const m = text.trim().match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):?(\d{2})$/);
+/** "2026-08-15T03:05:00Z" -> "2026-08-15 03:05", in the display time zone. */
+export function dateTimeText(iso: string): string {
+  const [y, mo, d, h, m] = parts(new Date(iso));
+  return `${y}-${pad(mo)}-${pad(d)} ${pad(h)}:${pad(m)}`;
+}
+
+/** Parse "YYYY-MM-DD HH:MM" in the display time zone to an ISO string, or null if malformed. */
+export function parseDateTimeText(text: string): string | null {
+  const m = text
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):?(\d{2})$/);
   if (!m) return null;
-  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
+  const f = [+m[1], +m[2] - 1, +m[3], +m[4], +m[5]] as const;
+  const d = timeZone.local ? new Date(...f) : new Date(Date.UTC(...f));
   return isNaN(d.getTime()) ? null : d.toISOString();
 }
 
@@ -240,9 +290,16 @@ export function pad(n: number): string {
 export function formatFreq(hz: number | null): string {
   if (hz == null) return "";
   const khz = hz / 1000;
-  return khz.toLocaleString("en-AU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return khz.toLocaleString("en-AU", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 export function errorText(e: unknown): string {
-  return typeof e === "string" ? e : e instanceof Error ? e.message : JSON.stringify(e);
+  return typeof e === "string"
+    ? e
+    : e instanceof Error
+      ? e.message
+      : JSON.stringify(e);
 }

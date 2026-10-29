@@ -3,7 +3,7 @@ use crate::contest::engine::{self, QsoResult, Score};
 use crate::contest::{self, ContestDef};
 use crate::export::{adif, cabrillo, scoresheet};
 use crate::model::{LogSetup, Qso, QsoInput};
-use crate::rig::{Rig, RigConfig, RigStatus};
+use crate::rig::{Rig, RigConfig, RigKind, RigStatus, tci};
 use crate::settings::Settings;
 use crate::store::Store;
 use crate::{callsign, geo};
@@ -124,14 +124,15 @@ fn view(log: &OpenLog) -> LogView {
 
 fn next_sent_nr(log: &OpenLog, band: &str) -> String {
     if log.def.has_field(ExchField::Serial) {
+        let per_band = log.setup.serial_per_band || log.def.serial_per_band;
         let max = log
             .qsos
             .iter()
-            .filter(|q| !log.setup.serial_per_band || q.band == band)
+            .filter(|q| !per_band || q.band == band)
             .filter_map(|q| q.sent_nr.parse::<u32>().ok())
             .max()
             .unwrap_or(0);
-        (max + 1).to_string()
+        format!("{:03}", max + 1)
     } else {
         String::new()
     }
@@ -329,6 +330,15 @@ pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<LogView> {
         }
         let mut q = draft_qso(log, &input);
         q.id = log.store.insert(&q)?;
+        let rig = state.settings.lock().unwrap().rig.clone();
+        if rig.kind == RigKind::Tci
+            && rig.spots
+            && let Some(khz) = q.freq_khz
+        {
+            let hz = (khz * 1000.0).round() as u64;
+            let text = format!("worked {} {}", q.band, q.time.format("%H%MZ"));
+            state.rig.send(tci::spot(&q.call, tci::spot_mode(&q.mode, hz), hz, &text));
+        }
         log.qsos.push(q);
         log.qsos.sort_by_key(|q| (q.time, q.id));
         Ok(view(log))

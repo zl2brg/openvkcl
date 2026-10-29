@@ -8,6 +8,8 @@
     errorText,
     formatFreq,
     pad,
+    clockText,
+    zoneLabel,
     RIG_STATUS_EVENT,
     type CheckResult,
     type ContestDef,
@@ -19,6 +21,7 @@
     type RigStatus,
     type Settings,
   } from "$lib/api";
+  import { setLocalTime, timeZone } from "$lib/timezone.svelte";
   import EntryLine from "$lib/components/EntryLine.svelte";
   import LogTable from "$lib/components/LogTable.svelte";
   import ScorePanel from "$lib/components/ScorePanel.svelte";
@@ -48,7 +51,6 @@
 
   let entry: EntryLine | undefined = $state();
 
-  let utcClock = $derived(`${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`);
   let fileName = $derived(view?.path.split(/[\\/]/).pop() ?? "");
 
   function say(text: string, isError = false) {
@@ -278,7 +280,13 @@
         <span class="muted" title={rig.error ?? ""}>{rig.error ? "Radio not responding" : "No radio"}</span>
       {/if}
     </div>
-    <div class="clock mono">{utcClock} UTC</div>
+    <button
+      class="clock mono"
+      onclick={() => setLocalTime(!timeZone.local)}
+      title="Click to show times in {timeZone.local ? 'UTC' : 'local time'}. Logs and exports are always UTC."
+    >
+      {clockText(now)} {zoneLabel()}
+    </button>
   </header>
 
   <nav>
@@ -434,6 +442,11 @@
   }
   .clock {
     font-size: 1.05rem;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
   }
   nav {
     display: flex;

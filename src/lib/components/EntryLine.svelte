@@ -3,9 +3,10 @@
   import {
     api,
     errorText,
+    dateTimeText,
     hhmm,
-    parseUtcText,
-    utcText,
+    parseDateTimeText,
+    zoneLabel,
     type CheckResult,
     type ContestDef,
     type LogSetup,
@@ -41,7 +42,7 @@
   let freqKhz = $state<number | null>(null);
   let followRig = $state(true);
   let manualTime = $state(false);
-  let timeText = $state(utcText(new Date().toISOString()));
+  let timeText = $state("");
   let error = $state("");
   let busy = $state(false);
 
@@ -72,7 +73,7 @@
   /** `useKnown` falls back to the locator and number last received from this station. */
   function input(useKnown: boolean): QsoInput {
     return {
-      time: manualTime ? parseUtcText(timeText) : null,
+      time: manualTime ? parseDateTimeText(timeText) : null,
       call: call.trim().toUpperCase(),
       band,
       mode,
@@ -114,8 +115,8 @@
 
   async function submit() {
     if (busy || !call.trim()) return;
-    if (manualTime && !parseUtcText(timeText)) {
-      error = "Time must be YYYY-MM-DD HH:MM (UTC).";
+    if (manualTime && !parseDateTimeText(timeText)) {
+      error = `Time must be YYYY-MM-DD HH:MM (${zoneLabel()}).`;
       return;
     }
     busy = true;
@@ -197,9 +198,16 @@
     {#if rig.connected}
       <label class="check"><input type="checkbox" bind:checked={followRig} /> Follow radio</label>
     {/if}
-    <label class="check"><input type="checkbox" bind:checked={manualTime} /> Enter time</label>
+    <label class="check">
+      <input
+        type="checkbox"
+        bind:checked={manualTime}
+        onchange={() => manualTime && (timeText = dateTimeText(new Date().toISOString()))}
+      />
+      Enter time
+    </label>
     {#if manualTime}
-      <input class="mono time" bind:value={timeText} title="QSO time, UTC (YYYY-MM-DD HH:MM)" />
+      <input class="mono time" bind:value={timeText} title="QSO time, {zoneLabel()} (YYYY-MM-DD HH:MM)" />
     {/if}
   </div>
 
@@ -273,7 +281,7 @@
       {:else if r.dupe}
         <span class="bad strong">DUPE</span>
         {#if r.next_ok}
-          <span>can work again from {hhmm(r.next_ok)} UTC</span>
+          <span>can work again from {hhmm(r.next_ok)} {zoneLabel()}</span>
         {:else}
           <span>already worked on this {contest.rework.per.includes("band") ? "band and " : ""}mode</span>
         {/if}
@@ -333,14 +341,14 @@
     width: 11ch;
   }
   .sent input {
-    width: 13ch;
+    width: 16ch;
     color: var(--muted);
   }
   .nr input {
     width: 6ch;
   }
   .loc input {
-    width: 7ch;
+    width: 11ch;
   }
   .rst input {
     width: 4.5ch;

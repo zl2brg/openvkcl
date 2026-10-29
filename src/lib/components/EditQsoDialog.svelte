@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
-  import { parseUtcText, utcText, type ContestDef, type Qso, type QsoRow } from "$lib/api";
+  import { dateTimeText, parseDateTimeText, zoneLabel, type ContestDef, type Qso, type QsoRow } from "$lib/api";
 
   let {
     row,
@@ -35,16 +35,16 @@
     sent_exch: r.sent_exch,
     rcvd_exch: r.rcvd_exch,
   });
-  let timeText = $state(utcText(r.time));
+  let timeText = $state(dateTimeText(r.time));
   let error = $state("");
   let hasNr = $derived(contest.exchange.includes("serial"));
   let hasExch = $derived(contest.exchange.includes("number"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
 
   function save() {
-    const t = parseUtcText(timeText);
+    const t = parseDateTimeText(timeText);
     if (!t) {
-      error = "Time must be YYYY-MM-DD HH:MM (UTC).";
+      error = `Time must be YYYY-MM-DD HH:MM (${zoneLabel()}).`;
       return;
     }
     qso.time = t;
@@ -55,7 +55,7 @@
 <Modal title={`Edit QSO with ${row.call}`} {onclose}>
   <div class="form">
     <div class="row">
-      <label>Time (UTC) <input class="mono" bind:value={timeText} /></label>
+      <label>Time ({zoneLabel()}) <input class="mono" bind:value={timeText} /></label>
       <label>Call <input class="mono" bind:value={qso.call} /></label>
     </div>
     <div class="row three">

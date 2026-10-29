@@ -122,7 +122,9 @@
           <input class="mono" bind:value={setup.sent_number} inputmode="numeric" />
         </label>
       {/if}
-      {#if contest?.exchange.includes("serial")}
+      {#if contest?.serial_per_band}
+        <p class="hint">Serial numbers run separately on each band in this contest.</p>
+      {:else if contest?.exchange.includes("serial")}
         <label class="check">
           <input type="checkbox" bind:checked={setup.serial_per_band} />
           Separate serial numbers on each band

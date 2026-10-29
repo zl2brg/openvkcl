@@ -1,11 +1,13 @@
 mod flrig;
 mod rigctld;
+pub mod tci;
 
 use crate::bands;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
+use tokio::sync::mpsc;
 use tauri::{AppHandle, Emitter};
 
 pub const STATUS_EVENT: &str = "rig-status";
@@ -17,6 +19,8 @@ pub enum RigKind {
     None,
     Rigctld,
     Flrig,
+    /// ExpertSDR / cudaSDR Transceiver Control Interface.
+    Tci,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,6 +30,8 @@ pub struct RigConfig {
     pub host: String,
     pub port: u16,
     pub poll_ms: u64,
+    /// TCI: mark logged contacts on the SDR's band display.
+    pub spots: bool,
 }
 
 impl Default for RigConfig {
@@ -35,6 +41,7 @@ impl Default for RigConfig {
             host: "127.0.0.1".into(),
             port: 4532,
             poll_ms: 500,
+            spots: true,
         }
     }
 }
@@ -57,11 +64,14 @@ pub fn contest_mode(rig_mode: &str) -> Option<&'static str> {
         Some("CW")
     } else if m.starts_with("RTTY") || m == "FSK" || m == "FSK-R" {
         Some("RY")
-    } else if ["USB", "LSB", "AM", "FM", "WFM", "FMN", "SAM", "DSB", "SSB"]
+    } else if ["USB", "LSB", "AM", "FM", "WFM", "FMN", "NFM", "SAM", "DSB", "SSB"]
         .iter()
         .any(|x| m == *x || m.starts_with(&format!("{x}-")))
     {
         if m.contains("-D") { Some("DG") } else { Some("PH") }
+    } else if ["D-STAR", "DSTAR", "DV", "FDV", "FREEDV"].contains(&m.as_str()) {
+        // Digital voice is a phone mode for contest purposes.
+        Some("PH")
     } else if m.starts_with("PKT") || m.starts_with("DATA") || m.starts_with("DIG") || m.starts_with("PSK") {
         Some("DG")
     } else {
@@ -72,6 +82,7 @@ pub fn contest_mode(rig_mode: &str) -> Option<&'static str> {
 enum Client {
     Rigctld(rigctld::Client),
     Flrig(flrig::Client),
+    Tci(Box<tci::Client>),
 }
 
 impl Client {
@@ -83,14 +94,33 @@ impl Client {
             RigKind::Flrig => flrig::Client::connect(&cfg.host, cfg.port)
                 .await
                 .map(Client::Flrig),
+            RigKind::Tci => tci::Client::connect(&cfg.host, cfg.port)
+                .await
+                .map(|c| Client::Tci(Box::new(c))),
             RigKind::None => Err("No rig configured".into()),
         }
     }
 
-    async fn poll(&mut self) -> Result<(u64, String), String> {
+    /// The radio's frequency and mode, at most `interval` after the last call.
+    async fn poll(&mut self, interval: Duration) -> Result<(u64, String), String> {
         match self {
-            Client::Rigctld(c) => c.poll().await,
-            Client::Flrig(c) => c.poll().await,
+            Client::Rigctld(c) => {
+                tokio::time::sleep(interval).await;
+                c.poll().await
+            }
+            Client::Flrig(c) => {
+                tokio::time::sleep(interval).await;
+                c.poll().await
+            }
+            Client::Tci(c) => c.poll(interval).await,
+        }
+    }
+
+    /// Send a raw command to the radio's control server; only TCI accepts any.
+    async fn send(&mut self, text: &str) -> Result<(), String> {
+        match self {
+            Client::Tci(c) => c.send(text).await,
+            _ => Ok(()),
         }
     }
 }
@@ -99,6 +129,8 @@ impl Client {
 pub struct Rig {
     task: Mutex<Option<JoinHandle<()>>>,
     status: Arc<Mutex<RigStatus>>,
+    /// Commands queued for the radio's control server (TCI spots).
+    outbox: Mutex<Option<mpsc::UnboundedSender<String>>>,
 }
 
 fn publish(app: &AppHandle, shared: &Mutex<RigStatus>, status: RigStatus) {
@@ -109,12 +141,26 @@ fn publish(app: &AppHandle, shared: &Mutex<RigStatus>, status: RigStatus) {
     }
 }
 
-async fn run(app: AppHandle, cfg: RigConfig, shared: Arc<Mutex<RigStatus>>) {
+async fn run(
+    app: AppHandle,
+    cfg: RigConfig,
+    shared: Arc<Mutex<RigStatus>>,
+    mut outbox: mpsc::UnboundedReceiver<String>,
+) {
     let poll = Duration::from_millis(cfg.poll_ms.clamp(100, 5000));
     loop {
         let error = match Client::connect(&cfg).await {
             Ok(mut client) => loop {
-                match client.poll().await {
+                let mut sent = Ok(());
+                while let Ok(cmd) = outbox.try_recv() {
+                    sent = sent.and(client.send(&cmd).await);
+                }
+                if let Err(e) = sent {
+                    break e;
+                }
+                let first = !shared.lock().unwrap().connected;
+                let wait = if first { Duration::ZERO } else { poll };
+                match client.poll(wait).await {
                     Ok((hz, rig_mode)) => {
                         let status = RigStatus {
                             connected: true,
@@ -125,7 +171,6 @@ async fn run(app: AppHandle, cfg: RigConfig, shared: Arc<Mutex<RigStatus>>) {
                             error: None,
                         };
                         publish(&app, &shared, status);
-                        tokio::time::sleep(poll).await;
                     }
                     Err(e) => break e,
                 }
@@ -151,14 +196,24 @@ impl Rig {
             return;
         }
         let shared = self.status.clone();
-        let handle = tauri::async_runtime::spawn(run(app, cfg, shared));
+        let (tx, rx) = mpsc::unbounded_channel();
+        *self.outbox.lock().unwrap() = Some(tx);
+        let handle = tauri::async_runtime::spawn(run(app, cfg, shared, rx));
         *self.task.lock().unwrap() = Some(handle);
+    }
+
+    /// Queue a command for the radio's control server; dropped if none is running.
+    pub fn send(&self, cmd: String) {
+        if let Some(tx) = self.outbox.lock().unwrap().as_ref() {
+            let _ = tx.send(cmd);
+        }
     }
 
     pub fn stop(&self, app: &AppHandle) {
         if let Some(h) = self.task.lock().unwrap().take() {
             h.abort();
         }
+        *self.outbox.lock().unwrap() = None;
         publish(app, &self.status, RigStatus::default());
     }
 
@@ -179,6 +234,7 @@ mod tests {
         assert_eq!(contest_mode("RTTY"), Some("RY"));
         assert_eq!(contest_mode("PKTUSB"), Some("DG"));
         assert_eq!(contest_mode("USB-D"), Some("DG"));
+        assert_eq!(contest_mode("D-STAR"), Some("PH"));
         assert_eq!(contest_mode("???"), None);
     }
 }

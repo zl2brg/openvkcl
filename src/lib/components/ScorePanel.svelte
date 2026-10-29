@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { hhmm, utcText, type CheckResult, type LogView } from "$lib/api";
+  import { dateTimeText, hhmm, zoneLabel, type CheckResult, type LogView } from "$lib/api";
 
   let {
     view,
@@ -96,13 +96,14 @@
     {#if sessions.length}
       {#each sessions as s, i (i)}
         <p class="muted">
-          {i ? hhmm(new Date(s.from).toISOString()) : utcText(new Date(s.from).toISOString())} – {hhmm(
+          {i ? hhmm(new Date(s.from).toISOString()) : dateTimeText(new Date(s.from).toISOString())} – {hhmm(
             new Date(s.to).toISOString(),
-          )} UTC
+          )}
+          {zoneLabel()}
         </p>
       {/each}
     {:else}
-      <p class="muted">{utcText(start.toISOString())} – {hhmm(end.toISOString())} UTC</p>
+      <p class="muted">{dateTimeText(start.toISOString())} – {hhmm(end.toISOString())} {zoneLabel()}</p>
     {/if}
   </section>
 

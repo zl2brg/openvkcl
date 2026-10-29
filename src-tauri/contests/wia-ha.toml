@@ -1,0 +1,53 @@
+# Harry Angel Memorial 80m Sprint (106 minutes)
+# https://www.wia.org.au/members/contests/harryangel/
+id = "wia-ha"
+name = "Harry Angel Memorial 80m Sprint"
+cabrillo_name = "WIA-HARRY ANGEL"
+rules_url = "https://www.wia.org.au/members/contests/harryangel/"
+duration_minutes = 106
+default_start_utc = "10:00"
+bands = ["80m"]
+modes = ["PH", "CW"]
+exchange = ["rst", "serial"]
+workable = ["VK", "VL", "VJ", "VI", "AX", "VH", "VM", "VN", "VZ", "ZL", "ZM"]
+
+[rework]
+kind = "never"
+per = ["mode"]
+
+[scoring]
+formula = "sum_points"
+
+[scoring.points]
+kind = "fixed"
+mode = { CW = 2 }
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+options = ["SINGLE-OP", "MULTI-OP", "CHECKLOG"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-BAND"
+options = ["80M"]
+default = "80M"
+
+[[categories]]
+key = "CATEGORY-MODE"
+options = ["MIXED", "SSB", "CW"]
+default = "MIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+options = ["HIGH", "LOW", "QRP"]
+default = "HIGH"
+
+[[categories]]
+key = "CATEGORY-STATION"
+options = ["FIXED", "PORTABLE"]
+default = "FIXED"
+
+[[categories]]
+key = "CATEGORY-TRANSMITTER"
+options = ["ONE"]
+default = "ONE"

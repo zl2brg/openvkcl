@@ -1,0 +1,66 @@
+# WIA VHF-UHF Field Day (Summer, Winter and Spring events)
+# https://www.wia.org.au/members/contests/vhfuhf/
+id = "wia-vhfuhf"
+name = "WIA VHF-UHF Field Day"
+cabrillo_name = "WIA_VHFUHF"
+rules_url = "https://www.wia.org.au/members/contests/vhfuhf/"
+duration_minutes = 1440
+default_start_utc = "01:00"
+bands = ["6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+modes = ["PH", "CW", "DG"]
+exchange = ["rst", "serial", "locator"]
+
+# Re-work after two hours on each band, or straight away if either station
+# moves to a new 4-character grid square.
+[rework]
+kind = "interval"
+minutes = 120
+per = ["band"]
+new_square_resets = true
+
+[scoring]
+formula = "sum_points"
+
+# 1 point per km times the band factor; beyond 700 km on 6m, 2m and 70cm,
+# kilometres count at 1 point per 100 km.
+[scoring.points]
+kind = "distance"
+taper_km = 700
+taper_divisor = 100
+taper_bands = ["6m", "2m", "70cm"]
+band_factor = { "6m" = 1.7, "2m" = 1.0, "70cm" = 2.7, "23cm" = 3.7, "13cm" = 4.4, "9cm" = 5.4, "6cm" = 6.4, "3cm" = 7.4, "1.25cm" = 10, "6mm" = 10, "4mm" = 10, "2.5mm" = 10, "2mm" = 10, "1mm" = 10 }
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+options = ["SINGLE-OP", "MULTI-OP", "CHECKLOG"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-STATION"
+options = ["PORTABLE", "FIXED"]
+default = "PORTABLE"
+
+[[categories]]
+key = "CATEGORY-BAND"
+options = ["ALL", "VHF-3-BAND", "VHF-4-BAND", "6M", "2M", "432", "1.2G"]
+default = "ALL"
+
+[[categories]]
+key = "CATEGORY-MODE"
+options = ["MIXED", "SSB", "CW", "DIGI"]
+default = "MIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+options = ["HIGH", "LOW", "QRP"]
+default = "LOW"
+
+[[categories]]
+key = "CATEGORY-TRANSMITTER"
+options = ["ONE", "TWO", "UNLIMITED"]
+default = "ONE"
+
+[[categories]]
+key = "CATEGORY-TIME"
+options = ["24-HOURS", "8-HOURS"]
+default = "24-HOURS"

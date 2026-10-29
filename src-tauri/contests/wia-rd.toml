@@ -1,0 +1,71 @@
+# WIA Remembrance Day Contest
+# https://www.wia.org.au/members/contests/rdcontest/
+id = "wia-rd"
+name = "WIA Remembrance Day"
+cabrillo_name = "WIA-REMEMBRANCE"
+rules_url = "https://www.wia.org.au/members/contests/rdcontest/"
+duration_minutes = 1440
+default_start_utc = "03:00"
+bands = ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm"]
+modes = ["PH", "CW", "RY"]
+exchange = ["rst", "number"]
+number_label = "Years"
+workable = ["VK", "VL", "VJ", "VI", "AX", "VH", "VM", "VN", "VZ", "ZL", "ZM", "P2"]
+
+# CW and RTTY count as one mode, as do SSB and FM.
+[mode_groups]
+RY = "CW"
+
+[rework]
+kind = "interval"
+minutes = 180
+per = ["band", "mode"]
+
+[scoring]
+formula = "sum_points"
+
+[scoring.points]
+kind = "fixed"
+band = { "160m" = 2, "23cm" = 2, "13cm" = 2, "9cm" = 2, "6cm" = 2, "3cm" = 2, "1.25cm" = 2 }
+mode = { CW = 2, RY = 2 }
+local_time = { from = "01:00", to = "06:00", factor = 3 }
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+options = ["SINGLE-OP", "MULTI-OP", "CHECKLOG"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-ASSISTED"
+options = ["NON-ASSISTED", "ASSISTED"]
+default = "NON-ASSISTED"
+
+[[categories]]
+key = "CATEGORY-BAND"
+options = ["ALL"]
+default = "ALL"
+
+[[categories]]
+key = "CATEGORY-MODE"
+options = ["MIXED", "SSB", "CW"]
+default = "MIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+options = ["HIGH", "LOW", "QRP"]
+default = "HIGH"
+
+[[categories]]
+key = "CATEGORY-STATION"
+options = ["FIXED", "PORTABLE"]
+default = "FIXED"
+
+[[categories]]
+key = "CATEGORY-TRANSMITTER"
+options = ["ONE", "UNLIMITED"]
+default = "ONE"
+
+[[categories]]
+key = "CATEGORY-OVERLAY"
+options = ["", "YOUTH"]
+default = ""

@@ -1,0 +1,84 @@
+# WIA John Moyle Memorial Field Day (2026 onwards rules)
+# https://www.wia.org.au/members/contests/johnmoyle/
+id = "wia-jmmfd"
+name = "WIA John Moyle Memorial Field Day"
+cabrillo_name = "WIA-JMMFD"
+rules_url = "https://www.wia.org.au/members/contests/johnmoyle/"
+duration_minutes = 1440
+default_start_utc = "01:00"
+bands = ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+modes = ["PH", "CW"]
+exchange = ["rst", "serial"]
+
+[blocks]
+minutes = 180
+
+[rework]
+kind = "block"
+per = ["band", "mode"]
+
+# Each new VK, ZL or P2 prefix, once per band per mode per block.
+[multiplier]
+kind = "prefix"
+per = ["band", "mode", "block"]
+only = ["VK", "VL", "VJ", "VI", "AX", "VH", "VM", "VN", "VZ", "ZL", "ZM", "P2"]
+
+[scoring]
+formula = "points_times_mults"
+
+[scoring.points]
+kind = "fixed"
+mode = { CW = 2 }
+
+[[score_groups]]
+name = "HF"
+bands = ["160m", "80m", "40m", "20m", "15m", "10m"]
+
+[[score_groups]]
+name = "VHF+"
+bands = ["6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+options = ["SINGLE-OP", "MULTI-OP", "CHECKLOG"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-ASSISTED"
+options = ["NON-ASSISTED", "ASSISTED"]
+default = "NON-ASSISTED"
+
+[[categories]]
+key = "CATEGORY-BAND"
+options = ["ALL"]
+default = "ALL"
+
+[[categories]]
+key = "CATEGORY-MODE"
+options = ["MIXED", "SSB", "CW"]
+default = "MIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+options = ["HIGH", "LOW", "QRP"]
+default = "HIGH"
+
+[[categories]]
+key = "CATEGORY-STATION"
+options = ["PORTABLE", "FIXED"]
+default = "PORTABLE"
+
+[[categories]]
+key = "CATEGORY-TRANSMITTER"
+options = ["ONE", "TWO", "UNLIMITED"]
+default = "ONE"
+
+[[categories]]
+key = "CATEGORY-TIME"
+options = ["24-HOURS", "6-HOURS"]
+default = "24-HOURS"
+
+[[categories]]
+key = "CATEGORY-OVERLAY"
+options = ["", "YOUTH"]
+default = ""

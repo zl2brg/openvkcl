@@ -1,0 +1,73 @@
+# WIA Trans-Tasman Low-Band Contest
+# https://www.wia.org.au/members/contests/transtasman/
+id = "wia-tt"
+name = "WIA Trans-Tasman Low-Band"
+cabrillo_name = "WIA-TRANS TASMAN"
+rules_url = "https://www.wia.org.au/members/contests/transtasman/"
+duration_minutes = 360
+default_start_utc = "08:00"
+bands = ["160m", "80m", "40m"]
+modes = ["PH", "CW", "RY", "DG"]
+exchange = ["rst", "serial"]
+workable = ["VK", "VL", "VJ", "VI", "AX", "VH", "VM", "VN", "VZ", "ZL", "ZM"]
+
+# RTTY and PSK are combined as the digital mode.
+[mode_groups]
+RY = "DG"
+
+[blocks]
+minutes = 120
+
+[rework]
+kind = "block"
+per = ["band", "mode"]
+
+[multiplier]
+kind = "prefix"
+per = ["band", "block"]
+
+[scoring]
+formula = "block_points_times_mults"
+
+[scoring.points]
+kind = "fixed"
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+options = ["SINGLE-OP", "MULTI-OP", "CHECKLOG"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-ASSISTED"
+options = ["NON-ASSISTED", "ASSISTED"]
+default = "NON-ASSISTED"
+
+[[categories]]
+key = "CATEGORY-BAND"
+options = ["ALL"]
+default = "ALL"
+
+[[categories]]
+key = "CATEGORY-MODE"
+options = ["MIXED"]
+default = "MIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+options = ["HIGH", "LOW", "QRP"]
+default = "LOW"
+
+[[categories]]
+key = "CATEGORY-STATION"
+options = ["FIXED", "PORTABLE"]
+default = "FIXED"
+
+[[categories]]
+key = "CATEGORY-TRANSMITTER"
+options = ["ONE", "UNLIMITED"]
+default = "ONE"
+
+[[categories]]
+key = "CATEGORY-OVERLAY"
+options = ["", "YOUTH"]
+default = ""

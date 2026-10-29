@@ -1,5 +1,8 @@
 # OpenVKCL
 
+<img width="1613" height="1014" alt="image" src="https://github.com/user-attachments/assets/c9d3fa3b-152a-418a-a02a-fdfb76908c23" />
+
+
 A cross-platform (Windows, Linux, macOS) contest logger for Australian and New
 Zealand contests, in the spirit of VKCL by Mike VK3AVV (SK).
 

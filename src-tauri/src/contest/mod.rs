@@ -11,6 +11,10 @@ const BUILTIN: &[(&str, &str)] = &[
     ("wia-ha.toml", include_str!("../../contests/wia-ha.toml")),
     ("wia-jmmfd.toml", include_str!("../../contests/wia-jmmfd.toml")),
     ("wia-vhfuhf.toml", include_str!("../../contests/wia-vhfuhf.toml")),
+    ("nzart-vhf-dx.toml", include_str!("../../contests/nzart-vhf-dx.toml")),
+    ("nzart-vhf-lowband.toml", include_str!("../../contests/nzart-vhf-lowband.toml")),
+    ("nzart-vhf-microwave.toml", include_str!("../../contests/nzart-vhf-microwave.toml")),
+    ("nzart-vhf-fd.toml", include_str!("../../contests/nzart-vhf-fd.toml")),
 ];
 
 pub fn parse(name: &str, text: &str) -> Result<ContestDef, String> {
@@ -226,5 +230,88 @@ mod tests {
         let tapered = if km > 700.0 { 700.0 + (km - 700.0) / 100.0 } else { km };
         let expected = tapered * 2.7;
         assert!((e.results[1].points - expected).abs() < 1e-9);
+    }
+
+    fn nz_qso(id: i64, t: DateTime<Utc>, call: &str, band: &str, mode: &str, theirs: &str) -> Qso {
+        let mut q = qso(id, t, call, band, mode);
+        q.sent_locator = "RF73hc".into();
+        q.rcvd_locator = theirs.into();
+        q
+    }
+
+    #[test]
+    fn nzart_vhf_table_periods_and_bonuses() {
+        let d = def("nzart-vhf-dx");
+        // 0400 UTC = 1700 NZDT.
+        let start = Utc.with_ymd_and_hms(2027, 2, 13, 4, 0, 0).unwrap();
+        let mut s = setup("nzart-vhf-dx", start);
+        let m = |n| start + Duration::minutes(n);
+        // From RF73hc: RF73jb 15.5 km, RF72lc 115 km, RE78ir 487 km, RE66hq 733 km.
+        let qsos = vec![
+            nz_qso(1, m(1), "ZL1AAA", "2m", "PH", "RF73jb"),    // 1
+            nz_qso(2, m(5), "ZL1AAA", "2m", "PH", "RF73jb"),    // dupe in this hour
+            nz_qso(3, m(61), "ZL1AAA", "2m", "PH", "RF73jb"),   // next hour: 1
+            nz_qso(4, m(62), "ZL1AAA", "70cm", "CW", "RF72lc"), // 10
+            nz_qso(5, m(63), "ZL2BBB", "6m", "DG", "RE66hq"),   // 25 x 1.5 = 37.5 -> 38
+            nz_qso(6, m(64), "ZL3CCC", "2m", "RY", "RE78ir"),   // 20 x 1.5 = 30
+            nz_qso(7, m(400), "ZL4DDD", "2m", "PH", "RE78ir"),  // between periods: 20, warned
+            nz_qso(8, m(841), "ZL4DDD", "23cm", "PH", "RF73jb"), // 15.5 x 0.2 = 3.1 -> 3
+        ];
+        let e = evaluate(&d, &s, &qsos);
+        let pts: Vec<f64> = e.results.iter().map(|r| r.points).collect();
+        assert_eq!(pts, vec![1.0, 0.0, 1.0, 10.0, 38.0, 30.0, 20.0, 3.0]);
+        assert!(e.results[1].dupe);
+        assert_eq!(e.results[1].next_ok, Some(m(60)));
+        assert!(e.results[6].warning.as_deref().unwrap().contains("operating periods"));
+        assert!(e.results[7].warning.is_none());
+        let groups: Vec<(&str, f64)> = e
+            .score
+            .groups
+            .iter()
+            .filter(|g| g.qsos > 0)
+            .map(|g| (g.name.as_str(), g.score))
+            .collect();
+        assert_eq!(groups, vec![("6m", 38.0), ("2m", 52.0), ("70cm", 10.0), ("23cm", 3.0)]);
+        assert_eq!(e.score.total, 103.0);
+
+        // QRP x1.5 then field station x1.2, applied to the rounded basic score.
+        s.categories.insert("CATEGORY-POWER".into(), "QRP".into());
+        s.categories.insert("CATEGORY-STATION".into(), "PORTABLE".into());
+        let e = evaluate(&d, &s, &qsos);
+        let pts: Vec<f64> = e.results.iter().map(|r| r.points).collect();
+        assert_eq!(pts, vec![2.0, 0.0, 2.0, 18.0, 68.0, 54.0, 36.0, 5.0]);
+
+        let sheet = crate::export::scoresheet::render(&d, &s, &qsos, &e);
+        assert!(sheet.contains("Bonuses applied,QRP x1.5 PORTABLE x1.2\r\n"));
+        assert!(sheet.contains("2027-02-13,0405,ZL1AAA,PH,59,2,59,1,RF73JB,,0,2,Dupe\r\n"));
+        assert!(sheet.contains("Band total,2m,94\r\n"));
+        assert!(sheet.ends_with("Claimed score,185\r\n"));
+    }
+
+    #[test]
+    fn nzart_band_sets_and_sessions() {
+        let start = Utc.with_ymd_and_hms(2027, 4, 3, 4, 0, 0).unwrap();
+        let m = |n| start + Duration::minutes(n);
+
+        let low = def("nzart-vhf-lowband");
+        let s = setup("nzart-vhf-lowband", start);
+        let qsos = vec![
+            nz_qso(1, m(1), "ZL1AAA", "23cm", "PH", "RF73jb"),
+            // 1250 minutes in: 1254 NZST after daylight saving ends.
+            nz_qso(2, m(1254), "ZL1AAA", "2m", "PH", "RF73jb"),
+        ];
+        let e = evaluate(&low, &s, &qsos);
+        assert!(e.results[0].invalid.is_some());
+        assert!(e.results[1].invalid.is_none() && e.results[1].warning.is_none());
+
+        let mw = def("nzart-vhf-microwave");
+        let s = setup("nzart-vhf-microwave", start);
+        let mut q = nz_qso(1, m(1), "ZL1AAA", "3cm", "PH", "RF73jb12");
+        q.sent_locator = "RF73hc34".into();
+        let e = evaluate(&mw, &s, &[q.clone(), nz_qso(2, m(2), "ZL1AAA", "2m", "PH", "RF73jb")]);
+        assert!(e.results[1].invalid.is_some());
+        let km = e.results[0].distance_km.unwrap();
+        assert_eq!(e.results[0].points, km.round());
+        assert!((km - 15.52).abs() > 0.01, "8-character locators should be used");
     }
 }

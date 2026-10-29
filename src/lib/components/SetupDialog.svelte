@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
-  import { pad, type ContestDef, type LogSetup } from "$lib/api";
+  import { isLocator, pad, type ContestDef, type LogSetup } from "$lib/api";
 
   let {
     contests,
@@ -56,10 +56,12 @@
       error = `Enter your ${contest.number_label.toLowerCase()} to send.`;
       return;
     }
-    if (contest?.exchange.includes("locator") && setup.station.locator.trim().length !== 6) {
-      error = "Enter your 6-character grid locator.";
+    const loc = setup.station.locator.trim();
+    if (contest?.exchange.includes("locator") && (!isLocator(loc) || loc.length < 6)) {
+      error = "Enter your grid locator: 6 characters, or 8 or 10 for more precision.";
       return;
     }
+    setup.station.locator = loc;
     setup.start = start.toISOString();
     setup.station.callsign = setup.station.callsign.trim().toUpperCase();
     setup.station.operators = setup.station.operators.trim().toUpperCase();
@@ -110,7 +112,7 @@
         </label>
         <label>
           Grid locator
-          <input class="mono" bind:value={setup.station.locator} maxlength="6" />
+          <input class="mono" bind:value={setup.station.locator} maxlength="10" />
         </label>
       </div>
       {#if contest?.exchange.includes("number")}
@@ -128,8 +130,8 @@
 
       <h3>Categories</h3>
       {#each contest?.categories ?? [] as cat (cat.key)}
-        <label>
-          {cat.key.replace("CATEGORY-", "").toLowerCase()}
+        <label class:plain={!!cat.label}>
+          {cat.label || cat.key.replace("CATEGORY-", "").toLowerCase()}
           <select bind:value={setup.categories[cat.key]}>
             {#each cat.options as opt (opt)}
               <option value={opt}>{opt || "(none)"}</option>
@@ -200,6 +202,9 @@
     flex-direction: row;
     align-items: center;
     gap: 8px;
+    text-transform: none;
+  }
+  label.plain {
     text-transform: none;
   }
   .row {

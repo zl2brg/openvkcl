@@ -1,0 +1,101 @@
+# NZART VHF-UHF-SHF-EHF Low Band Contest (rules with effect from January 2016)
+# https://nzart.org.nz/activities/contests/vhf/
+#
+# First Saturday in April (a week later if it clashes with Easter or the VHF
+# Convention), 6 m to 70 cm. Operating periods 17:00-23:00 Saturday and
+# 07:00-13:00 Sunday NZ time. Daylight saving usually ends overnight, so the
+# Sunday period is allowed from 14 to 21 hours after the start to cover both
+# NZDT and NZST. Logs go by email to vhfcontest@nzart.org.nz.
+id = "nzart-vhf-lowband"
+name = "NZART VHF Low Band Contest"
+cabrillo_name = "NZART-VHF-UHF-SHF-EHF"
+rules_url = "https://nzart.org.nz/activities/contests/vhf/"
+duration_minutes = 1260
+default_start_utc = "04:00"
+bands = ["6m", "2m", "70cm"]
+modes = ["PH", "CW", "RY", "DG"]
+exchange = ["rst", "serial", "locator"]
+
+[[sessions]]
+start_minute = 0
+minutes = 360
+
+[[sessions]]
+start_minute = 840
+minutes = 420
+
+# Each hour is a period; a station may be worked once per band per period.
+[blocks]
+minutes = 60
+
+[rework]
+kind = "block"
+per = ["band"]
+
+[scoring]
+formula = "sum_points"
+round = "nearest"
+
+# QRP x1.5, then field station x1.2.
+[[scoring.bonus]]
+category = "CATEGORY-POWER"
+value = "QRP"
+factor = 1.5
+
+[[scoring.bonus]]
+category = "CATEGORY-STATION"
+value = "PORTABLE"
+factor = 1.2
+
+[scoring.points]
+kind = "distance"
+# Machine modes (RTTY, packet, WSJT...) score x1.5.
+mode = { RY = 1.5, DG = 1.5 }
+
+[scoring.points.band_table]
+"6m" = [[25, 1], [50, 2], [75, 3], [100, 5], [150, 7], [200, 10], [300, 12], [400, 15], [500, 20], [600, 25], [800, 25], [1200, 25], [2000, 35], [3000, 50], [4000, 60], [5000, 80], [inf, 100]]
+"2m" = [[25, 1], [50, 2], [75, 3], [100, 5], [150, 7], [200, 10], [300, 12], [400, 15], [500, 20], [600, 25], [800, 40], [1200, 50], [2000, 75], [3000, 125], [4000, 175], [5000, 225], [inf, 250]]
+"70cm" = [[25, 2], [50, 3], [75, 5], [100, 7], [150, 10], [200, 15], [300, 20], [400, 30], [500, 40], [600, 50], [800, 75], [1200, 100], [2000, 150], [3000, 250], [4000, 350], [5000, 450], [inf, 500]]
+
+# Each band is scored as a separate mini-contest.
+[[score_groups]]
+name = "6m"
+bands = ["6m"]
+
+[[score_groups]]
+name = "2m"
+bands = ["2m"]
+
+[[score_groups]]
+name = "70cm"
+bands = ["70cm"]
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+label = "Operator"
+options = ["SINGLE-OP", "MULTI-OP", "CHECKLOG"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-STATION"
+label = "Station (PORTABLE = field station, x1.2)"
+options = ["FIXED", "PORTABLE"]
+default = "FIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+label = "Power (QRP = 5 W or less, x1.5)"
+options = ["HIGH", "LOW", "QRP"]
+default = "HIGH"
+
+[[categories]]
+key = "CATEGORY-BAND"
+label = "Band"
+options = ["ALL"]
+default = "ALL"
+
+[[categories]]
+key = "CATEGORY-MODE"
+label = "Mode"
+options = ["MIXED", "SSB", "CW", "DIGI"]
+default = "MIXED"

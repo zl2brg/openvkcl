@@ -4,6 +4,7 @@ export type ExchField = "rst" | "serial" | "number" | "locator";
 
 export interface CategoryField {
   key: string;
+  label: string;
   options: string[];
   default: string;
 }
@@ -22,6 +23,8 @@ export interface ContestDef {
   number_label: string;
   workable: string[];
   blocks: { minutes: number } | null;
+  sessions: { start_minute: number; minutes: number }[];
+  multiplier: { kind: "prefix"; per: string[]; only: string[] } | null;
   rework: { kind: "never" | "block" | "interval"; minutes: number; per: string[]; new_square_resets: boolean };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
@@ -173,6 +176,7 @@ export const api = {
   cabrilloText: () => invoke<string>("cabrillo_text"),
   exportCabrillo: (path: string) => invoke<void>("export_cabrillo", { path }),
   exportAdif: (path: string) => invoke<void>("export_adif", { path }),
+  exportScoreSheet: (path: string) => invoke<void>("export_score_sheet", { path }),
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),
   rigDisconnect: () => invoke<void>("rig_disconnect"),
   rigStatus: () => invoke<RigStatus>("rig_status"),
@@ -215,6 +219,11 @@ export function parseUtcText(text: string): string | null {
   if (!m) return null;
   const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]));
   return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** A 4, 6, 8 or 10 character Maidenhead locator, e.g. "QF22", "RF73hc", "RF73hc34". */
+export function isLocator(text: string): boolean {
+  return /^[A-R]{2}\d{2}([A-X]{2}(\d{2}([A-X]{2})?)?)?$/i.test(text.trim());
 }
 
 export function pad(n: number): string {

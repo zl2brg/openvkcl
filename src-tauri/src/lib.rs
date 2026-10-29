@@ -44,6 +44,7 @@ pub fn run() {
             commands::cabrillo_text,
             commands::export_cabrillo,
             commands::export_adif,
+            commands::export_score_sheet,
             commands::rig_connect,
             commands::rig_disconnect,
             commands::rig_status,

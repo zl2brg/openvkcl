@@ -1,7 +1,7 @@
 use crate::contest::def::ExchField;
 use crate::contest::engine::{self, QsoResult, Score};
 use crate::contest::{self, ContestDef};
-use crate::export::{adif, cabrillo};
+use crate::export::{adif, cabrillo, scoresheet};
 use crate::model::{LogSetup, Qso, QsoInput};
 use crate::rig::{Rig, RigConfig, RigStatus};
 use crate::settings::Settings;
@@ -357,6 +357,15 @@ pub fn export_cabrillo(state: State<AppState>, path: String) -> CmdResult<()> {
 pub fn export_adif(state: State<AppState>, path: String) -> CmdResult<()> {
     let text = with_log(&state, |log| {
         Ok(adif::render(&log.def, &log.setup, &log.qsos, VERSION))
+    })?;
+    std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))
+}
+
+#[tauri::command]
+pub fn export_score_sheet(state: State<AppState>, path: String) -> CmdResult<()> {
+    let text = with_log(&state, |log| {
+        let eval = engine::evaluate(&log.def, &log.setup, &log.qsos);
+        Ok(scoresheet::render(&log.def, &log.setup, &log.qsos, &eval))
     })?;
     std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))
 }

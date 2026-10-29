@@ -13,12 +13,30 @@
 
   let start = $derived(new Date(view.setup.start));
   let end = $derived(new Date(start.getTime() + view.contest.duration_minutes * 60_000));
-  let usesMults = $derived(view.score.groups.some((g) => g.mults > 0) || !!view.contest.score_groups.length);
+  let usesMults = $derived(!!view.contest.multiplier);
+  // Contests scored per band list every band; only show the ones in use.
+  let groups = $derived.by(() => {
+    const used = view.score.groups.filter((g) => g.qsos > 0);
+    return view.score.groups.length > 3 ? used : view.score.groups;
+  });
+  let sessions = $derived(
+    view.contest.sessions.map((s) => ({
+      from: start.getTime() + s.start_minute * 60_000,
+      to: start.getTime() + (s.start_minute + s.minutes) * 60_000,
+    })),
+  );
 
   let timing = $derived.by(() => {
     const t = now.getTime();
     if (t < start.getTime()) return `Starts in ${duration(start.getTime() - t)}`;
     if (t >= end.getTime()) return "Contest has ended";
+    if (sessions.length) {
+      const i = sessions.findIndex((s) => t < s.to);
+      if (i < 0) return "Contest has ended";
+      const s = sessions[i];
+      if (t < s.from) return `Break · period ${i + 1} of ${sessions.length} starts in ${duration(s.from - t)}`;
+      return `Period ${i + 1} of ${sessions.length} · ${duration(s.to - t)} remaining · hour ${Math.floor((t - s.from) / 3_600_000) + 1}`;
+    }
     let text = `${duration(end.getTime() - t)} remaining`;
     const b = view.contest.blocks;
     if (b) {
@@ -56,7 +74,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each view.score.groups as g (g.name)}
+        {#each groups as g (g.name)}
           <tr>
             <td>{g.name}</td>
             <td>{g.qsos}</td>
@@ -75,7 +93,17 @@
   <section>
     <h3>Contest time</h3>
     <p>{timing}</p>
-    <p class="muted">{utcText(start.toISOString())} – {hhmm(end.toISOString())} UTC</p>
+    {#if sessions.length}
+      {#each sessions as s, i (i)}
+        <p class="muted">
+          {i ? hhmm(new Date(s.from).toISOString()) : utcText(new Date(s.from).toISOString())} – {hhmm(
+            new Date(s.to).toISOString(),
+          )} UTC
+        </p>
+      {/each}
+    {:else}
+      <p class="muted">{utcText(start.toISOString())} – {hhmm(end.toISOString())} UTC</p>
+    {/if}
   </section>
 
   {#if view.score.by_band.length}

@@ -28,6 +28,8 @@ kind = "distance"
 taper_km = 700
 taper_divisor = 100
 taper_bands = ["6m", "2m", "70cm"]
+# Distances are measured between sub-square (6-character) centres.
+max_locator_chars = 6
 band_factor = { "6m" = 1.7, "2m" = 1.0, "70cm" = 2.7, "23cm" = 3.7, "13cm" = 4.4, "9cm" = 5.4, "6cm" = 6.4, "3cm" = 7.4, "1.25cm" = 10, "6mm" = 10, "4mm" = 10, "2.5mm" = 10, "2mm" = 10, "1mm" = 10 }
 
 [[categories]]

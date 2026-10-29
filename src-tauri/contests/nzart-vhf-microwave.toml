@@ -1,0 +1,132 @@
+# NZART VHF-UHF-SHF-EHF Microwave Contest (rules with effect from January 2016)
+# https://nzart.org.nz/activities/contests/vhf/
+#
+# First Saturday in October, 32 cm and up. Operating periods 17:00-23:00
+# Saturday and 07:00-13:00 Sunday NZDT, i.e. 04:00-10:00 and 18:00-24:00 UTC
+# Saturday. Above 2.4 GHz, give your location to about 1 km: use an
+# 8-character locator. Logs go by email to vhfcontest@nzart.org.nz.
+id = "nzart-vhf-microwave"
+name = "NZART Microwave Contest"
+cabrillo_name = "NZART-VHF-UHF-SHF-EHF"
+rules_url = "https://nzart.org.nz/activities/contests/vhf/"
+duration_minutes = 1200
+default_start_utc = "04:00"
+bands = ["33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+modes = ["PH", "CW", "RY", "DG"]
+exchange = ["rst", "serial", "locator"]
+
+[[sessions]]
+start_minute = 0
+minutes = 360
+
+[[sessions]]
+start_minute = 840
+minutes = 360
+
+# Each hour is a period; a station may be worked once per band per period.
+[blocks]
+minutes = 60
+
+[rework]
+kind = "block"
+per = ["band"]
+
+[scoring]
+formula = "sum_points"
+round = "nearest"
+
+# QRP x1.5, then field station x1.2.
+[[scoring.bonus]]
+category = "CATEGORY-POWER"
+value = "QRP"
+factor = 1.5
+
+[[scoring.bonus]]
+category = "CATEGORY-STATION"
+value = "PORTABLE"
+factor = 1.2
+
+[scoring.points]
+kind = "distance"
+# Machine modes (RTTY, packet, WSJT...) score x1.5.
+mode = { RY = 1.5, DG = 1.5 }
+band_factor = { "33cm" = 0.3, "23cm" = 0.2, "13cm" = 0.5, "9cm" = 1, "6cm" = 1, "3cm" = 1, "1.25cm" = 1, "6mm" = 1, "4mm" = 1, "2.5mm" = 1, "2mm" = 1, "1mm" = 1 }
+
+# Each band is scored as a separate mini-contest.
+[[score_groups]]
+name = "33cm"
+bands = ["33cm"]
+
+[[score_groups]]
+name = "23cm"
+bands = ["23cm"]
+
+[[score_groups]]
+name = "13cm"
+bands = ["13cm"]
+
+[[score_groups]]
+name = "9cm"
+bands = ["9cm"]
+
+[[score_groups]]
+name = "6cm"
+bands = ["6cm"]
+
+[[score_groups]]
+name = "3cm"
+bands = ["3cm"]
+
+[[score_groups]]
+name = "1.25cm"
+bands = ["1.25cm"]
+
+[[score_groups]]
+name = "6mm"
+bands = ["6mm"]
+
+[[score_groups]]
+name = "4mm"
+bands = ["4mm"]
+
+[[score_groups]]
+name = "2.5mm"
+bands = ["2.5mm"]
+
+[[score_groups]]
+name = "2mm"
+bands = ["2mm"]
+
+[[score_groups]]
+name = "1mm"
+bands = ["1mm"]
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+label = "Operator"
+options = ["SINGLE-OP", "MULTI-OP", "CHECKLOG"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-STATION"
+label = "Station (PORTABLE = field station, x1.2)"
+options = ["FIXED", "PORTABLE"]
+default = "FIXED"
+
+[[categories]]
+key = "CATEGORY-POWER"
+label = "Power (QRP = 5 W or less, x1.5)"
+options = ["HIGH", "LOW", "QRP"]
+default = "HIGH"
+
+[[categories]]
+key = "CATEGORY-BAND"
+label = "Band"
+options = ["ALL"]
+default = "ALL"
+
+[[categories]]
+key = "CATEGORY-MODE"
+label = "Mode"
+options = ["MIXED", "SSB", "CW", "DIGI"]
+default = "MIXED"

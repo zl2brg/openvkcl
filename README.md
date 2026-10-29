@@ -7,12 +7,17 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 
 ## Features
 
-- Contests: WIA Remembrance Day, Trans-Tasman Low-Band, Harry Angel Sprint,
+- WIA contests: Remembrance Day, Trans-Tasman Low-Band, Harry Angel Sprint,
   John Moyle Memorial Field Day and the VHF-UHF Field Days.
+- NZART VHF-UHF-SHF-EHF contests: DX Weekend, Low Band, Microwave and Field Day,
+  with hourly periods, the Table 1 distance scores, points per km above 70 cm,
+  and the machine-mode, QRP and field-station multipliers.
 - Live dupe checking with each contest's re-work rules (time intervals, time
   blocks, new grid square), points, multipliers and running score.
-- Distance scoring from 6-character Maidenhead locators for the VHF-UHF Field Days.
-- Cabrillo 3.0 export with the contest names vklogchecker.com expects, plus ADIF.
+- Distance scoring from 6, 8 or 10-character Maidenhead locators.
+- Cabrillo 3.0 export with the contest names vklogchecker.com expects, plus ADIF
+  and a per-band CSV score sheet (distance, claimed points and running total
+  for each contact).
 - Radio control through Hamlib `rigctld` or FLRig: band, mode and frequency
   follow the radio.
 - Each log is a single SQLite file (`.ovkcl`); every contact is written to disk
@@ -27,6 +32,10 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 4. Double-click a contact in the log to edit or delete it.
 5. **Cabrillo…** previews the log and saves it for upload to
    [vklogchecker.com](https://www.vklogchecker.com).
+6. For the NZART VHF contests, **Score sheet** writes the per-band log sheets
+   the rules ask for. Email it with your station details and signed declaration
+   to vhfcontest@nzart.org.nz within two weeks. Set *Power* to QRP and
+   *Station* to PORTABLE (field station) in the setup to claim those multipliers.
 
 ### Radio control
 
@@ -53,7 +62,14 @@ contest, put a `.toml` file in the app's `contests` folder; a file with the same
 | Windows | `%APPDATA%\nz.zl.openvkcl\contests\` |
 | macOS | `~/Library/Application Support/nz.zl.openvkcl/contests/` |
 
-Check the current WIA rules before each contest; they change from year to year.
+Check the current WIA and NZART rules before each contest; they change from
+year to year.
+
+The NZART contests assume the usual NZ daylight-saving dates: periods start at
+04:00 UTC on the Saturday (17:00 NZDT), and the Low Band contest's Sunday period
+is widened to cover the end of daylight saving overnight. NZART also accepts
+latitude and longitude; OpenVKCL only uses locators, so use 8 characters above
+2.4 GHz, where the rules ask for about 1 km precision.
 
 ## Development
 

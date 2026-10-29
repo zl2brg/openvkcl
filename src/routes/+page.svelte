@@ -230,6 +230,22 @@
     }
   }
 
+  async function exportScoreSheet() {
+    if (!view) return;
+    const path = await save({
+      title: "Export score sheet",
+      defaultPath: `${view.setup.station.callsign.replace(/\//g, "_")}-${view.contest.id}.csv`,
+      filters: [{ name: "CSV spreadsheet", extensions: ["csv"] }],
+    });
+    if (!path) return;
+    try {
+      await api.exportScoreSheet(withExt(path, "csv"));
+      say(`Exported score sheet to ${withExt(path, "csv")}`);
+    } catch (e) {
+      say(errorText(e), true);
+    }
+  }
+
   async function connectRig(config: Settings["rig"]) {
     try {
       await api.rigConnect(config);
@@ -272,6 +288,9 @@
     <span class="sep"></span>
     <button onclick={showCabrillo} disabled={!view}>Cabrillo…</button>
     <button onclick={exportAdif} disabled={!view}>Export ADIF</button>
+    <button onclick={exportScoreSheet} disabled={!view} title="Per-band sheet with distance and points for each contact">
+      Score sheet
+    </button>
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
     {#if notice}

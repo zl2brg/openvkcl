@@ -1,4 +1,4 @@
-use super::def::{ContestDef, Dim, ExchField, Formula, Points, ReworkKind};
+use super::def::{Bonus, ContestDef, Dim, ExchField, Formula, Points, ReworkKind};
 use crate::model::{LogSetup, Qso};
 use crate::{callsign, geo};
 use chrono::{DateTime, Duration, NaiveTime, Utc};
@@ -86,16 +86,15 @@ fn exchange_warning(def: &ContestDef, setup: &LogSetup, q: &Qso) -> Option<Strin
         problems.push(format!("received {} missing", def.number_label.to_lowercase()));
     }
     if def.has_field(ExchField::Locator) {
-        if q.rcvd_locator.len() != 6 || !geo::is_valid(&q.rcvd_locator) {
-            problems.push("received locator must be 6 characters".to_string());
+        if q.rcvd_locator.len() < 6 || !geo::is_valid(&q.rcvd_locator) {
+            problems.push("received locator must be at least 6 characters".to_string());
         }
-        if q.sent_locator.len() != 6 || !geo::is_valid(&q.sent_locator) {
-            problems.push("own locator must be 6 characters".to_string());
+        if q.sent_locator.len() < 6 || !geo::is_valid(&q.sent_locator) {
+            problems.push("own locator must be at least 6 characters".to_string());
         }
     }
-    let end = def.end(setup.start);
-    if q.time < setup.start || q.time >= end {
-        problems.push("outside the contest period".to_string());
+    if !def.in_session(setup.start, q.time) {
+        problems.push("outside the contest operating periods".to_string());
     }
     (!problems.is_empty()).then(|| {
         let mut s = problems.join(", ");
@@ -118,8 +117,34 @@ fn local_time_factor(setup: &LogSetup, t: DateTime<Utc>, from: &str, to: &str, f
     if inside { factor } else { 1.0 }
 }
 
+/// Bonuses that apply to this log, from its setup categories (or their defaults).
+pub fn applied_bonuses<'a>(def: &'a ContestDef, setup: &LogSetup) -> Vec<&'a Bonus> {
+    def.scoring
+        .bonus
+        .iter()
+        .filter(|b| {
+            let chosen = setup.categories.get(&b.category).cloned().or_else(|| {
+                def.categories
+                    .iter()
+                    .find(|c| c.key == b.category)
+                    .map(|c| c.default.clone())
+            });
+            chosen.as_deref() == Some(b.value.as_str())
+        })
+        .collect()
+}
+
+fn bonus_factor(def: &ContestDef, setup: &LogSetup) -> f64 {
+    applied_bonuses(def, setup).iter().map(|b| b.factor).product()
+}
+
 /// Points for a valid, non-dupe contact, plus distance for distance-scored contests.
 fn points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64>) {
+    let (p, dist) = basic_points(def, setup, q);
+    (def.scoring.round.apply(p * bonus_factor(def, setup)), dist)
+}
+
+fn basic_points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64>) {
     match &def.scoring.points {
         Points::Fixed {
             base,
@@ -140,25 +165,42 @@ fn points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64>) {
         }
         Points::Distance {
             band_factor,
+            band_table,
+            mode,
             taper_km,
             taper_divisor,
             taper_bands,
+            max_locator_chars,
         } => {
-            if q.rcvd_locator.len() != 6 || q.sent_locator.len() != 6 {
+            if q.rcvd_locator.len() < 6 || q.sent_locator.len() < 6 {
                 return (0.0, None);
             }
-            let Some(d) = geo::distance_km(&q.sent_locator, &q.rcvd_locator) else {
+            let Some(d) = geo::distance_km_limited(&q.sent_locator, &q.rcvd_locator, *max_locator_chars)
+            else {
                 return (0.0, None);
             };
-            let mut km = d;
-            if let Some(t) = taper_km
-                && taper_bands.iter().any(|b| b == &q.band)
-                && km > *t
-            {
-                km = t + (km - t) / taper_divisor;
-            }
-            let factor = band_factor.get(&q.band).copied().unwrap_or(0.0);
-            (km * factor, Some(d))
+            let basic = if let Some(rows) = band_table.get(&q.band) {
+                rows.iter()
+                    .find(|(upto, _)| d < *upto)
+                    .or(rows.last())
+                    .map_or(0.0, |(_, p)| *p)
+            } else {
+                let mut km = d;
+                if let Some(t) = taper_km
+                    && taper_bands.iter().any(|b| b == &q.band)
+                    && km > *t
+                {
+                    km = t + (km - t) / taper_divisor;
+                }
+                km * band_factor.get(&q.band).copied().unwrap_or(0.0)
+            };
+            let basic = def.scoring.round.apply(basic);
+            let mode_factor = mode
+                .get(&q.mode)
+                .or_else(|| mode.get(&def.mode_group(&q.mode)))
+                .copied()
+                .unwrap_or(1.0);
+            (basic * mode_factor, Some(d))
         }
     }
 }

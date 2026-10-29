@@ -15,18 +15,30 @@ pub fn normalize_locator(s: &str) -> String {
         .collect()
 }
 
-/// A 4 or 6 character Maidenhead locator.
+/// Each pair of locator characters: (highest allowed character, degrees of longitude, degrees of latitude).
+const PAIRS: [(u8, f64, f64); 5] = [
+    (b'R', 20.0, 10.0),
+    (b'9', 2.0, 1.0),
+    (b'X', 2.0 / 24.0, 1.0 / 24.0),
+    (b'9', 2.0 / 240.0, 1.0 / 240.0),
+    (b'X', 2.0 / 5760.0, 1.0 / 5760.0),
+];
+
+fn pair_value(c: u8, max: u8) -> Option<f64> {
+    let c = c.to_ascii_uppercase();
+    let base = if max == b'9' { b'0' } else { b'A' };
+    (base..=max).contains(&c).then(|| (c - base) as f64)
+}
+
+/// A 4, 6, 8 or 10 character Maidenhead locator.
 pub fn is_valid(s: &str) -> bool {
     let b = s.trim().as_bytes();
-    if b.len() != 4 && b.len() != 6 {
+    if !matches!(b.len(), 4 | 6 | 8 | 10) {
         return false;
     }
-    let letter = |c: u8, max: u8| (b'A'..=max).contains(&c.to_ascii_uppercase());
-    letter(b[0], b'R')
-        && letter(b[1], b'R')
-        && b[2].is_ascii_digit()
-        && b[3].is_ascii_digit()
-        && (b.len() == 4 || (letter(b[4], b'X') && letter(b[5], b'X')))
+    b.chunks(2)
+        .zip(PAIRS)
+        .all(|(p, (max, _, _))| pair_value(p[0], max).is_some() && pair_value(p[1], max).is_some())
 }
 
 /// The 4-character square of a locator.
@@ -34,22 +46,33 @@ pub fn square(s: &str) -> String {
     s.trim().chars().take(4).collect::<String>().to_ascii_uppercase()
 }
 
-/// Latitude and longitude of the centre of the locator's square or sub-square.
+/// Latitude and longitude of the centre of the locator's smallest square.
 pub fn center(s: &str) -> Option<(f64, f64)> {
     if !is_valid(s) {
         return None;
     }
-    let b = s.trim().to_ascii_uppercase().into_bytes();
-    let mut lon = (b[0] - b'A') as f64 * 20.0 + (b[2] - b'0') as f64 * 2.0 - 180.0;
-    let mut lat = (b[1] - b'A') as f64 * 10.0 + (b[3] - b'0') as f64 - 90.0;
-    if b.len() == 6 {
-        lon += (b[4] - b'A') as f64 * (2.0 / 24.0) + 1.0 / 24.0;
-        lat += (b[5] - b'A') as f64 * (1.0 / 24.0) + 0.5 / 24.0;
-    } else {
-        lon += 1.0;
-        lat += 0.5;
+    let b = s.trim().as_bytes();
+    let (mut lon, mut lat) = (-180.0, -90.0);
+    let (mut lon_size, mut lat_size) = (0.0, 0.0);
+    for (p, (max, dlon, dlat)) in b.chunks(2).zip(PAIRS) {
+        lon += pair_value(p[0], max)? * dlon;
+        lat += pair_value(p[1], max)? * dlat;
+        (lon_size, lat_size) = (dlon, dlat);
     }
-    Some((lat, lon))
+    Some((lat + lat_size / 2.0, lon + lon_size / 2.0))
+}
+
+/// Great-circle distance between the centres of two locators, each truncated to
+/// `max_chars` characters if given (e.g. 6 to measure between sub-square centres).
+pub fn distance_km_limited(a: &str, b: &str, max_chars: Option<usize>) -> Option<f64> {
+    let cut = |s: &str| -> String {
+        let s = s.trim();
+        match max_chars {
+            Some(n) if s.len() > n => s[..n].to_string(),
+            _ => s.to_string(),
+        }
+    };
+    distance_km(&cut(a), &cut(b))
 }
 
 /// Great-circle distance between the centres of two locators.
@@ -74,6 +97,11 @@ mod tests {
         assert!(!is_valid("QF2"));
         assert!(!is_valid("SF22le"));
         assert!(!is_valid("QF22lz"));
+        assert!(is_valid("RE78ir45"));
+        assert!(is_valid("RE78ir45bx"));
+        assert!(!is_valid("RE78ir4"));
+        assert!(!is_valid("RE78irab"));
+        assert!(!is_valid("RE78ir45bz"));
     }
 
     #[test]
@@ -81,6 +109,12 @@ mod tests {
         let (lat, lon) = center("QF22le").unwrap();
         assert!((lat - (-37.8125)).abs() < 1e-9, "{lat}");
         assert!((lon - 144.958333).abs() < 1e-5, "{lon}");
+        let (lat, lon) = center("QF22").unwrap();
+        assert_eq!((lat, lon), (-37.5, 145.0));
+        // An extended square lies inside its sub-square.
+        let (lat, lon) = center("QF22le09").unwrap();
+        assert!((-37.833333..-37.791666).contains(&lat), "{lat}");
+        assert!((144.916666..145.0).contains(&lon), "{lon}");
     }
 
     #[test]
@@ -89,5 +123,8 @@ mod tests {
         // Melbourne to Sydney is roughly 710 km.
         let d = distance_km("QF22le", "QF56od").unwrap();
         assert!((690.0..730.0).contains(&d), "{d}");
+        // Two points 1 km apart in the same sub-square measure 0 when truncated to 6 characters.
+        assert!(distance_km("RF73jc11", "RF73jc19").unwrap() > 0.5);
+        assert_eq!(distance_km_limited("RF73jc11", "RF73jc19", Some(6)), Some(0.0));
     }
 }

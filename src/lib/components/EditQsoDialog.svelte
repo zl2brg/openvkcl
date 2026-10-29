@@ -74,13 +74,13 @@
     <div class="row three">
       <label>RST <input class="mono" bind:value={qso.sent_rst} /></label>
       {#if hasNr}<label>{contest.number_label} <input class="mono" bind:value={qso.sent_nr} /></label>{/if}
-      {#if hasLoc}<label>Locator <input class="mono" bind:value={qso.sent_locator} maxlength="6" /></label>{/if}
+      {#if hasLoc}<label>Locator <input class="mono" bind:value={qso.sent_locator} maxlength="10" /></label>{/if}
     </div>
     <h3>Received</h3>
     <div class="row three">
       <label>RST <input class="mono" bind:value={qso.rcvd_rst} /></label>
       {#if hasNr}<label>{contest.number_label} <input class="mono" bind:value={qso.rcvd_nr} /></label>{/if}
-      {#if hasLoc}<label>Locator <input class="mono" bind:value={qso.rcvd_locator} maxlength="6" /></label>{/if}
+      {#if hasLoc}<label>Locator <input class="mono" bind:value={qso.rcvd_locator} maxlength="10" /></label>{/if}
     </div>
     {#if error}<p class="error">{error}</p>{/if}
   </div>

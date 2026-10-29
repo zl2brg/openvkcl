@@ -28,6 +28,10 @@ pub struct ContestDef {
     pub rework: Rework,
     #[serde(default)]
     pub blocks: Option<Blocks>,
+    /// Operating periods within the contest, for contests with breaks. Empty means
+    /// the whole contest is one period.
+    #[serde(default)]
+    pub sessions: Vec<Session>,
     pub scoring: Scoring,
     #[serde(default)]
     pub multiplier: Option<Multiplier>,
@@ -88,6 +92,13 @@ pub struct Blocks {
     pub minutes: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Session {
+    /// Minutes after the contest start.
+    pub start_minute: i64,
+    pub minutes: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Formula {
@@ -104,6 +115,42 @@ pub struct Scoring {
     /// Prefixes whose contacts score points. Empty means all workable stations.
     #[serde(default)]
     pub count_only: Vec<String>,
+    /// Rounding of each contact's basic distance score, and of its points after
+    /// mode factors and bonuses.
+    #[serde(default)]
+    pub round: Round,
+    /// Factors applied to every contact when a setup category has a given value,
+    /// e.g. x1.5 for CATEGORY-POWER = QRP.
+    #[serde(default)]
+    pub bonus: Vec<Bonus>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Round {
+    #[default]
+    None,
+    Nearest,
+    Up,
+}
+
+impl Round {
+    pub fn apply(self, x: f64) -> f64 {
+        // Products like 37.5 x 1.5 x 1.2 land a hair below .5; snap before rounding.
+        let x = if self == Round::None { x } else { (x * 1e9).round() / 1e9 };
+        match self {
+            Round::None => x,
+            Round::Nearest => x.round(),
+            Round::Up => x.ceil(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Bonus {
+    pub category: String,
+    pub value: String,
+    pub factor: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -122,7 +169,16 @@ pub enum Points {
         local_time: Option<LocalTimeBonus>,
     },
     Distance {
+        /// Points per kilometre on each band.
+        #[serde(default)]
         band_factor: BTreeMap<String, f64>,
+        /// Stepped scores: rows of [up to km, points], checked in order. Takes
+        /// precedence over `band_factor`.
+        #[serde(default)]
+        band_table: BTreeMap<String, Vec<(f64, f64)>>,
+        /// Per-mode multiplying factor, e.g. machine modes.
+        #[serde(default)]
+        mode: BTreeMap<String, f64>,
         /// Beyond this distance, kilometres count at 1/`taper_divisor` on `taper_bands`.
         #[serde(default)]
         taper_km: Option<f64>,
@@ -130,6 +186,9 @@ pub enum Points {
         taper_divisor: f64,
         #[serde(default)]
         taper_bands: Vec<String>,
+        /// Measure between the centres of locators truncated to this many characters.
+        #[serde(default)]
+        max_locator_chars: Option<usize>,
     },
 }
 
@@ -174,6 +233,9 @@ pub struct ScoreGroup {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CategoryField {
     pub key: String,
+    /// Shown in the setup dialog instead of the Cabrillo key.
+    #[serde(default)]
+    pub label: String,
     pub options: Vec<String>,
     #[serde(default)]
     pub default: String,
@@ -208,6 +270,17 @@ impl ContestDef {
         start + Duration::minutes(self.duration_minutes)
     }
 
+    /// Whether `t` falls within the contest's operating periods.
+    pub fn in_session(&self, start: DateTime<Utc>, t: DateTime<Utc>) -> bool {
+        if self.sessions.is_empty() {
+            return t >= start && t < self.end(start);
+        }
+        self.sessions.iter().any(|s| {
+            let from = start + Duration::minutes(s.start_minute);
+            t >= from && t < from + Duration::minutes(s.minutes)
+        })
+    }
+
     pub fn validate(&self) -> Result<(), String> {
         if self.bands.is_empty() || self.modes.is_empty() {
             return Err(format!("{}: bands and modes must not be empty", self.id));
@@ -219,6 +292,18 @@ impl ContestDef {
         }
         if self.rework.kind == ReworkKind::Block && self.blocks.is_none() {
             return Err(format!("{}: block rework needs [blocks]", self.id));
+        }
+        for s in &self.sessions {
+            if s.start_minute < 0 || s.minutes <= 0 || s.start_minute + s.minutes > self.duration_minutes {
+                return Err(format!("{}: sessions must lie within the contest", self.id));
+            }
+        }
+        if let Points::Distance { band_table, .. } = &self.scoring.points {
+            for (band, rows) in band_table {
+                if rows.is_empty() || rows.windows(2).any(|w| w[0].0 >= w[1].0) {
+                    return Err(format!("{}: band_table for {band} must list increasing distances", self.id));
+                }
+            }
         }
         if let Points::Fixed {
             local_time: Some(lt),

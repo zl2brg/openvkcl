@@ -216,7 +216,7 @@
           class="mono"
           bind:this={locInput}
           bind:value={rcvdLoc}
-          maxlength="6"
+          maxlength="10"
           placeholder={check?.known_locator ?? ""}
           autocomplete="off"
           spellcheck="false"

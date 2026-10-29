@@ -21,8 +21,9 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 - Cabrillo 3.0 export with the contest names vklogchecker.com expects, plus ADIF
   and a per-band CSV score sheet (distance, claimed points and running total
   for each contact).
-- Radio control through Hamlib `rigctld`, FLRig or TCI (cudaSDR, ExpertSDR,
-  Thetis): band, mode and frequency follow the radio.
+- Radio control for any radio Hamlib supports (just pick the model and serial
+  port), FLRig or TCI (cudaSDR, ExpertSDR, Thetis): band, mode and frequency
+  follow the radio.
 - Each log is a single SQLite file (`.ovkcl`); every contact is written to disk
   as soon as it's logged.
 
@@ -51,9 +52,16 @@ your last contact with that station, so you only type it once.
 
 OpenVKCL talks to the radio through one of:
 
-- **Hamlib rigctld** (default port 4532), e.g.
-  `rigctld -m 3073 -r /dev/ttyUSB0 -s 19200` (Windows: `-r COM3`).
-  `rigctl -l` lists radio model numbers.
+- **A radio on a USB or serial port** - pick the radio model (any radio
+  [Hamlib](https://hamlib.github.io) supports), the serial port and baud rate.
+  OpenVKCL runs Hamlib's `rigctld` for you while connected and restarts it if
+  the radio is switched off and on. `rigctld` is included in the Windows
+  installer; on Linux the `.deb`/`.rpm` pull in Hamlib (or
+  `sudo apt install libhamlib-utils`), and on macOS install it with
+  `brew install hamlib`. On Linux your user needs to be in the `dialout` group
+  to open serial ports.
+- **A rigctld you run yourself** (default port 4532), e.g. on another computer:
+  `rigctld -m 3073 -r /dev/ttyUSB0 -s 19200`.
 - **FLRig** (default port 12345).
 - **TCI**, the WebSocket interface built into SDR software: cudaSDR (default
   port 50001), ExpertSDR (40001) or Thetis. Enable the TCI server in the SDR
@@ -97,6 +105,11 @@ npm run check            # type-check the frontend
 cd src-tauri && cargo test
 npm run tauri build      # build an installer for this platform
 ```
+
+Windows builds bundle Hamlib from `src-tauri/hamlib/`: copy `rigctld.exe`, the
+`.dll` files and the licence files from the
+[Hamlib Windows release](https://github.com/Hamlib/Hamlib/releases) there first
+(the release workflow does this automatically).
 
 Pushing a `v*` tag to GitHub builds installers for all three platforms
 (`.github/workflows/release.yml`) and attaches them to a draft release.

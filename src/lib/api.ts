@@ -149,7 +149,7 @@ export interface CheckResult {
   previous: QsoRow[];
 }
 
-export type RigKind = "none" | "rigctld" | "flrig" | "tci";
+export type RigKind = "none" | "hamlib" | "rigctld" | "flrig" | "tci";
 
 export interface RigConfig {
   kind: RigKind;
@@ -157,6 +157,21 @@ export interface RigConfig {
   port: number;
   poll_ms: number;
   spots: boolean;
+  model: number;
+  serial_port: string;
+  baud: number;
+  rigctld_args: string;
+}
+
+export interface RigModel {
+  id: number;
+  mfg: string;
+  model: string;
+}
+
+export interface SerialPort {
+  path: string;
+  label: string;
 }
 
 export interface RigStatus {
@@ -203,6 +218,8 @@ export const api = {
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),
   rigDisconnect: () => invoke<void>("rig_disconnect"),
   rigStatus: () => invoke<RigStatus>("rig_status"),
+  rigModels: () => invoke<RigModel[]>("rig_models"),
+  serialPorts: () => invoke<SerialPort[]>("serial_ports"),
   appVersion: () => invoke<string>("app_version"),
 };
 

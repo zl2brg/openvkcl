@@ -48,8 +48,15 @@ pub fn run() {
             commands::rig_connect,
             commands::rig_disconnect,
             commands::rig_status,
+            commands::rig_models,
+            commands::serial_ports,
             commands::app_version,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                app.state::<AppState>().rig.shutdown();
+            }
+        });
 }

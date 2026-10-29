@@ -3,6 +3,7 @@ use crate::contest::engine::{self, QsoResult, Score};
 use crate::contest::{self, ContestDef};
 use crate::export::{adif, cabrillo, scoresheet};
 use crate::model::{LogSetup, Qso, QsoInput};
+use crate::rig::hamlib::{self, RigModel, SerialPort};
 use crate::rig::{Rig, RigConfig, RigKind, RigStatus, tci};
 use crate::settings::Settings;
 use crate::store::Store;
@@ -11,7 +12,7 @@ use chrono::Utc;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -423,6 +424,16 @@ pub fn rig_disconnect(app: AppHandle, state: State<AppState>) {
 #[tauri::command]
 pub fn rig_status(state: State<AppState>) -> RigStatus {
     state.rig.status()
+}
+
+#[tauri::command]
+pub async fn rig_models(app: AppHandle) -> CmdResult<Vec<RigModel>> {
+    hamlib::models(app.path().resource_dir().ok().as_deref()).await
+}
+
+#[tauri::command]
+pub async fn serial_ports() -> Vec<SerialPort> {
+    hamlib::serial_ports()
 }
 
 #[tauri::command]

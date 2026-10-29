@@ -46,6 +46,21 @@ jobs:
 
       - run: npm ci
 
+      # The Windows installer ships Hamlib's rigctld so radios work without installing anything else.
+      - name: Bundle Hamlib (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $v = "4.7.2"
+          Invoke-WebRequest "https://github.com/Hamlib/Hamlib/releases/download/$v/hamlib-w64-$v.zip" -OutFile hamlib.zip
+          if ((Get-FileHash hamlib.zip -Algorithm SHA256).Hash -ne "8553bc6c5c6032e8debf99c017e98f58fed7e07e7c25d04815dc3e8bbe3304c7") {
+            throw "Hamlib download doesn't match its published SHA-256"
+          }
+          Expand-Archive hamlib.zip -DestinationPath hamlib-zip
+          $src = "hamlib-zip/hamlib-w64-$v"
+          New-Item -ItemType Directory -Force src-tauri/hamlib | Out-Null
+          Copy-Item "$src/bin/rigctld.exe", "$src/bin/*.dll", "$src/COPYING*.txt", "$src/LICENSE.txt" src-tauri/hamlib/
+
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

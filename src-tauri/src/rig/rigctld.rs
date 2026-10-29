@@ -26,14 +26,14 @@ impl Client {
         let mut line = String::new();
         let n = timeout(TIMEOUT, self.stream.read_line(&mut line))
             .await
-            .map_err(|_| "rigctld timed out".to_string())?
+            .map_err(|_| "the radio didn't answer; check it's switched on and the baud rate".to_string())?
             .map_err(|e| e.to_string())?;
         if n == 0 {
             return Err("rigctld closed the connection".into());
         }
         let line = line.trim().to_string();
         if let Some(code) = line.strip_prefix("RPRT ") {
-            return Err(format!("rigctld error {code}"));
+            return Err(rprt_text(code));
         }
         Ok(line)
     }
@@ -56,4 +56,16 @@ impl Client {
         let _passband = self.read_line().await?;
         Ok((hz, mode))
     }
+}
+
+/// Hamlib's error codes, from rig.h.
+fn rprt_text(code: &str) -> String {
+    let what = match code.trim() {
+        "-5" => "the radio didn't answer; is it switched on?",
+        "-6" => "I/O error talking to the radio",
+        "-8" => "the radio sent something unexpected; check the baud rate",
+        "-11" => "the radio doesn't support that",
+        _ => return format!("rigctld error {}", code.trim()),
+    };
+    format!("rigctld: {what}")
 }

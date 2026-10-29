@@ -1,4 +1,5 @@
 mod flrig;
+pub mod hamlib;
 mod rigctld;
 pub mod tci;
 
@@ -8,7 +9,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
 use tokio::sync::mpsc;
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 
 pub const STATUS_EVENT: &str = "rig-status";
 
@@ -17,6 +18,8 @@ pub const STATUS_EVENT: &str = "rig-status";
 pub enum RigKind {
     #[default]
     None,
+    /// A radio on a serial or USB port, through a rigctld we start ourselves.
+    Hamlib,
     Rigctld,
     Flrig,
     /// ExpertSDR / cudaSDR Transceiver Control Interface.
@@ -32,6 +35,12 @@ pub struct RigConfig {
     pub poll_ms: u64,
     /// TCI: mark logged contacts on the SDR's band display.
     pub spots: bool,
+    /// Hamlib: rig model number, serial port and baud rate (0 for the radio's default).
+    pub model: u32,
+    pub serial_port: String,
+    pub baud: u32,
+    /// Hamlib: extra rigctld options, e.g. `--set-conf=civaddr=0xA2`.
+    pub rigctld_args: String,
 }
 
 impl Default for RigConfig {
@@ -42,6 +51,10 @@ impl Default for RigConfig {
             port: 4532,
             poll_ms: 500,
             spots: true,
+            model: 0,
+            serial_port: String::new(),
+            baud: 0,
+            rigctld_args: String::new(),
         }
     }
 }
@@ -80,14 +93,21 @@ pub fn contest_mode(rig_mode: &str) -> Option<&'static str> {
 }
 
 enum Client {
+    Hamlib(hamlib::Client),
     Rigctld(rigctld::Client),
     Flrig(flrig::Client),
     Tci(Box<tci::Client>),
 }
 
 impl Client {
-    async fn connect(cfg: &RigConfig) -> Result<Self, String> {
+    async fn connect(cfg: &RigConfig, app: &AppHandle, process: &hamlib::Process) -> Result<Self, String> {
         match cfg.kind {
+            RigKind::Hamlib => {
+                let resources = app.path().resource_dir().ok();
+                hamlib::Client::start(cfg, resources.as_deref(), process.clone())
+                    .await
+                    .map(Client::Hamlib)
+            }
             RigKind::Rigctld => rigctld::Client::connect(&cfg.host, cfg.port)
                 .await
                 .map(Client::Rigctld),
@@ -104,6 +124,10 @@ impl Client {
     /// The radio's frequency and mode, at most `interval` after the last call.
     async fn poll(&mut self, interval: Duration) -> Result<(u64, String), String> {
         match self {
+            Client::Hamlib(c) => {
+                tokio::time::sleep(interval).await;
+                c.poll().await
+            }
             Client::Rigctld(c) => {
                 tokio::time::sleep(interval).await;
                 c.poll().await
@@ -131,6 +155,8 @@ pub struct Rig {
     status: Arc<Mutex<RigStatus>>,
     /// Commands queued for the radio's control server (TCI spots).
     outbox: Mutex<Option<mpsc::UnboundedSender<String>>>,
+    /// The rigctld started for the current connection, if any.
+    rigctld: Mutex<hamlib::Process>,
 }
 
 fn publish(app: &AppHandle, shared: &Mutex<RigStatus>, status: RigStatus) {
@@ -146,10 +172,11 @@ async fn run(
     cfg: RigConfig,
     shared: Arc<Mutex<RigStatus>>,
     mut outbox: mpsc::UnboundedReceiver<String>,
+    process: hamlib::Process,
 ) {
     let poll = Duration::from_millis(cfg.poll_ms.clamp(100, 5000));
     loop {
-        let error = match Client::connect(&cfg).await {
+        let error = match Client::connect(&cfg, &app, &process).await {
             Ok(mut client) => loop {
                 let mut sent = Ok(());
                 while let Ok(cmd) = outbox.try_recv() {
@@ -198,7 +225,9 @@ impl Rig {
         let shared = self.status.clone();
         let (tx, rx) = mpsc::unbounded_channel();
         *self.outbox.lock().unwrap() = Some(tx);
-        let handle = tauri::async_runtime::spawn(run(app, cfg, shared, rx));
+        let process = hamlib::Process::default();
+        *self.rigctld.lock().unwrap() = process.clone();
+        let handle = tauri::async_runtime::spawn(run(app, cfg, shared, rx, process));
         *self.task.lock().unwrap() = Some(handle);
     }
 
@@ -214,7 +243,13 @@ impl Rig {
             h.abort();
         }
         *self.outbox.lock().unwrap() = None;
+        self.shutdown();
         publish(app, &self.status, RigStatus::default());
+    }
+
+    /// Stop any rigctld we started; called when the app exits.
+    pub fn shutdown(&self) {
+        self.rigctld.lock().unwrap().kill();
     }
 
     pub fn status(&self) -> RigStatus {

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { hhmm, type ContestDef, type QsoRow } from "$lib/api";
+  import { hhmm, zoneLabel, type ContestDef, type QsoRow } from "$lib/api";
 
   let {
     rows,
@@ -37,7 +37,7 @@
     <thead>
       <tr>
         <th class="num">#</th>
-        <th>Time</th>
+        <th>{zoneLabel() === "UTC" ? "UTC" : "Local"}</th>
         <th>Band</th>
         <th>Mode</th>
         <th>Call</th>

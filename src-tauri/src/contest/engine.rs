@@ -124,31 +124,55 @@ fn local_time_factor(setup: &LogSetup, t: DateTime<Utc>, from: &str, to: &str, f
     if inside { factor } else { 1.0 }
 }
 
-/// Bonuses that apply to this log, from its setup categories (or their defaults).
-pub fn applied_bonuses<'a>(def: &'a ContestDef, setup: &LogSetup) -> Vec<&'a Bonus> {
+fn category_is(def: &ContestDef, setup: &LogSetup, b: &Bonus) -> bool {
+    let chosen = setup.categories.get(&b.category).cloned().or_else(|| {
+        def.categories
+            .iter()
+            .find(|c| c.key == b.category)
+            .map(|c| c.default.clone())
+    });
+    chosen.as_deref() == Some(b.value.as_str())
+}
+
+/// A bonus that applies to this log; `bands` lists where, for per-band bonuses.
+pub struct AppliedBonus<'a> {
+    pub bonus: &'a Bonus,
+    pub bands: Option<Vec<String>>,
+}
+
+/// Bonuses that apply to this log, from its setup categories (or their defaults) and,
+/// for per-band bonuses, the bands ticked in the setup.
+pub fn applied_bonuses<'a>(def: &'a ContestDef, setup: &LogSetup) -> Vec<AppliedBonus<'a>> {
     def.scoring
         .bonus
         .iter()
-        .filter(|b| {
-            let chosen = setup.categories.get(&b.category).cloned().or_else(|| {
-                def.categories
-                    .iter()
-                    .find(|c| c.key == b.category)
-                    .map(|c| c.default.clone())
-            });
-            chosen.as_deref() == Some(b.value.as_str())
+        .filter_map(|b| {
+            if !b.per_band {
+                return category_is(def, setup, b).then_some(AppliedBonus { bonus: b, bands: None });
+            }
+            let bands: Vec<String> = match setup.bonus_bands.get(&b.category) {
+                Some(ticked) => def.bands.iter().filter(|x| ticked.contains(x)).cloned().collect(),
+                // Logs from before per-band bonuses claimed them on every band.
+                None if category_is(def, setup, b) => def.bands.clone(),
+                None => Vec::new(),
+            };
+            (!bands.is_empty()).then_some(AppliedBonus { bonus: b, bands: Some(bands) })
         })
         .collect()
 }
 
-fn bonus_factor(def: &ContestDef, setup: &LogSetup) -> f64 {
-    applied_bonuses(def, setup).iter().map(|b| b.factor).product()
+fn bonus_factor(bonuses: &[AppliedBonus], band: &str) -> f64 {
+    bonuses
+        .iter()
+        .filter(|a| a.bands.as_ref().is_none_or(|bands| bands.iter().any(|b| b == band)))
+        .map(|a| a.bonus.factor)
+        .product()
 }
 
 /// Points for a valid, non-dupe contact, plus distance for distance-scored contests.
-fn points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64>) {
+fn points(def: &ContestDef, setup: &LogSetup, bonuses: &[AppliedBonus], q: &Qso) -> (f64, Option<f64>) {
     let (p, dist) = basic_points(def, setup, q);
-    (def.scoring.round.apply(p * bonus_factor(def, setup)), dist)
+    (def.scoring.round.apply(p * bonus_factor(bonuses, &q.band)), dist)
 }
 
 fn basic_points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64>) {
@@ -304,6 +328,7 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
     let mut dupes = 0;
     let mut invalid_count = 0;
     let mut by_band: BTreeMap<String, u32> = BTreeMap::new();
+    let bonuses = applied_bonuses(def, setup);
 
     for i in order {
         let q = &qsos[i];
@@ -352,7 +377,7 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
 
         let tally = &mut tallies[group_of(def, &q.band)];
         tally.qsos += 1;
-        let (p, dist) = points(def, setup, q);
+        let (p, dist) = points(def, setup, &bonuses, q);
         r.distance_km = dist;
         if callsign::matches_any(&q.call, &def.scoring.count_only) {
             r.points = p;

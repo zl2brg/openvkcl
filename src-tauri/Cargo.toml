@@ -1,8 +1,10 @@
 [package]
 name = "openvkcl"
-version = "0.2.0"
-description = "Cross-platform VK contest logger"
-authors = ["Simon"]
+version = "0.3.0"
+description = "Contest logger for Australian and New Zealand contests"
+authors = ["Simon, ZL2BRG <simon.eatough@gmail.com>"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/zl2brg/openvkcl"
 edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

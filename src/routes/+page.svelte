@@ -29,6 +29,7 @@
   import RigDialog from "$lib/components/RigDialog.svelte";
   import EditQsoDialog from "$lib/components/EditQsoDialog.svelte";
   import CabrilloDialog from "$lib/components/CabrilloDialog.svelte";
+  import AboutDialog from "$lib/components/AboutDialog.svelte";
 
   const LOG_FILTER = [{ name: "OpenVKCL log", extensions: ["ovkcl"] }];
 
@@ -46,6 +47,7 @@
 
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
   let rigDialog = $state(false);
+  let aboutDialog = $state(false);
   let editRow = $state<QsoRow | null>(null);
   let cabrillo = $state<string | null>(null);
 
@@ -113,6 +115,7 @@
       utc_offset_minutes: -today.getTimezoneOffset(),
       location: "",
       categories: Object.fromEntries((contest?.categories ?? []).map((c) => [c.key, c.default])),
+      bonus_bands: {},
       soapbox: "",
     };
   }
@@ -301,6 +304,7 @@
     </button>
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
+    <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
       <span class="notice" class:error={noticeIsError}>{notice}</span>
     {/if}
@@ -358,6 +362,16 @@
     onsave={saveSetup}
     onclose={() => {
       setupDialog = null;
+      refocus();
+    }}
+  />
+{/if}
+
+{#if aboutDialog}
+  <AboutDialog
+    {version}
+    onclose={() => {
+      aboutDialog = false;
       refocus();
     }}
   />

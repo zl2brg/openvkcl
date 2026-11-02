@@ -42,6 +42,15 @@ export interface ContestDef {
   };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
+  scoring: { bonus: Bonus[] };
+}
+
+export interface Bonus {
+  category: string;
+  value: string;
+  factor: number;
+  per_band: boolean;
+  label: string;
 }
 
 export interface Station {
@@ -67,6 +76,7 @@ export interface LogSetup {
   utc_offset_minutes: number;
   location: string;
   categories: Record<string, string>;
+  bonus_bands: Record<string, string[]>;
   soapbox: string;
 }
 

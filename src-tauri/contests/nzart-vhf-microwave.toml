@@ -42,6 +42,8 @@ round = "nearest"
 category = "CATEGORY-POWER"
 value = "QRP"
 factor = 1.5
+per_band = true
+label = "QRP bonus (5 W or less, x1.5) on"
 
 [[scoring.bonus]]
 category = "CATEGORY-STATION"
@@ -117,7 +119,7 @@ default = "FIXED"
 
 [[categories]]
 key = "CATEGORY-POWER"
-label = "Power (QRP = 5 W or less, x1.5)"
+label = "Power (QRP = 5 W or less)"
 options = ["HIGH", "LOW", "QRP"]
 default = "HIGH"
 

@@ -264,6 +264,7 @@ mod tests {
             utc_offset_minutes: 600,
             location: String::new(),
             categories: Default::default(),
+            bonus_bands: Default::default(),
             soapbox: String::new(),
         };
         let store = Store::create(&path, &setup).unwrap();

@@ -86,6 +86,7 @@ mod tests {
             utc_offset_minutes: 600,
             location: String::new(),
             categories: Default::default(),
+            bonus_bands: Default::default(),
             soapbox: String::new(),
         }
     }
@@ -291,6 +292,19 @@ mod tests {
         assert!(sheet.contains("2027-02-13,0405,1,ZL1AAA,PH,59,2,59,1,RF73JB,,0,2,Dupe\r\n"));
         assert!(sheet.contains("Band total,2m,94\r\n"));
         assert!(sheet.ends_with("Claimed score,185\r\n"));
+
+        // QRP claimed on 2m and 70cm only; the field station bonus still applies everywhere.
+        s.bonus_bands.insert("CATEGORY-POWER".into(), vec!["70cm".into(), "2m".into()]);
+        let e = evaluate(&d, &s, &qsos);
+        let pts: Vec<f64> = e.results.iter().map(|r| r.points).collect();
+        assert_eq!(pts, vec![2.0, 0.0, 2.0, 18.0, 45.0, 54.0, 36.0, 4.0]);
+        let sheet = crate::export::scoresheet::render(&d, &s, &qsos, &e);
+        assert!(sheet.contains("Bonuses applied,\"QRP x1.5 (2m, 70cm) PORTABLE x1.2\"\r\n"));
+
+        // No bands ticked: no QRP bonus, whatever the power category says.
+        s.bonus_bands.insert("CATEGORY-POWER".into(), vec![]);
+        let e = evaluate(&d, &s, &qsos);
+        assert_eq!(e.results[0].points, 1.0);
     }
 
     fn hf(id: i64, t: DateTime<Utc>, call: &str, band: &str, mode: &str, branch: &str) -> Qso {

@@ -129,7 +129,8 @@ pub struct Scoring {
     #[serde(default)]
     pub round: Round,
     /// Factors applied to every contact when a setup category has a given value,
-    /// e.g. x1.5 for CATEGORY-POWER = QRP.
+    /// e.g. x1.5 for CATEGORY-POWER = QRP, or to the bands ticked in the setup for
+    /// per-band bonuses.
     #[serde(default)]
     pub bonus: Vec<Bonus>,
 }
@@ -160,6 +161,12 @@ pub struct Bonus {
     pub category: String,
     pub value: String,
     pub factor: f64,
+    /// Claimed band by band (`LogSetup::bonus_bands`) rather than through the category.
+    #[serde(default)]
+    pub per_band: bool,
+    /// Shown next to the band checkboxes for per-band bonuses.
+    #[serde(default)]
+    pub label: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

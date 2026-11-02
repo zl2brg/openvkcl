@@ -37,6 +37,9 @@ pub struct LogSetup {
     pub location: String,
     #[serde(default)]
     pub categories: BTreeMap<String, String>,
+    /// Bands claimed for each per-band bonus, keyed by the bonus's category.
+    #[serde(default)]
+    pub bonus_bands: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub soapbox: String,
 }

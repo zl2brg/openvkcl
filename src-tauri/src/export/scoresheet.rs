@@ -40,7 +40,12 @@ pub fn render(def: &ContestDef, setup: &LogSetup, qsos: &[Qso], eval: &Evaluatio
     }
     let bonus: Vec<String> = engine::applied_bonuses(def, setup)
         .iter()
-        .map(|b| format!("{} x{}", b.value, b.factor))
+        .map(|a| match &a.bands {
+            Some(bands) if *bands != def.bands => {
+                format!("{} x{} ({})", a.bonus.value, a.bonus.factor, bands.join(", "))
+            }
+            _ => format!("{} x{}", a.bonus.value, a.bonus.factor),
+        })
         .collect();
     if !bonus.is_empty() {
         out += &csv(&["Bonuses applied", &bonus.join(" ")]);

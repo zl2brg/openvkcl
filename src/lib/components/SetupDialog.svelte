@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
-  import { isLocator, pad, type ContestDef, type LogSetup } from "$lib/api";
+  import { isLocator, pad, type Bonus, type ContestDef, type LogSetup } from "$lib/api";
 
   let {
     contests,
@@ -26,6 +26,17 @@
   let error = $state("");
 
   let contest = $derived(contests.find((c) => c.id === setup.contest_id));
+  let bandBonuses = $derived(contest?.scoring.bonus.filter((b) => b.per_band) ?? []);
+
+  /** Bands ticked for a per-band bonus. Without a list (older logs) the category claims every band. */
+  function bonusBands(b: Bonus): string[] {
+    return setup.bonus_bands[b.category] ?? (setup.categories[b.category] === b.value ? (contest?.bands ?? []) : []);
+  }
+
+  function toggleBonusBand(b: Bonus, band: string, on: boolean) {
+    const bands = bonusBands(b).filter((x) => x !== band);
+    setup.bonus_bands[b.category] = on ? [...bands, band] : bands;
+  }
 
   const offsets = Array.from({ length: 53 }, (_, i) => (i - 24) * 30);
   function offsetLabel(m: number) {
@@ -40,6 +51,7 @@
     startTime = c.default_start_utc;
     setup.serial_per_band = c.serial_per_band;
     setup.categories = Object.fromEntries(c.categories.map((f) => [f.key, f.default]));
+    setup.bonus_bands = {};
   }
 
   function save() {
@@ -142,6 +154,23 @@
           </select>
         </label>
       {/each}
+      {#each bandBonuses as b (b.category)}
+        <div class="bands">
+          {b.label || `${b.value} x${b.factor} on`}
+          <div class="ticks">
+            {#each contest?.bands ?? [] as band (band)}
+              <label class="check">
+                <input
+                  type="checkbox"
+                  checked={bonusBands(b).includes(band)}
+                  onchange={(e) => toggleBonusBand(b, band, e.currentTarget.checked)}
+                />
+                {band}
+              </label>
+            {/each}
+          </div>
+        </div>
+      {/each}
     </section>
 
     <section>
@@ -209,6 +238,17 @@
   }
   label.plain {
     text-transform: none;
+  }
+  .bands {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 0.85rem;
+  }
+  .ticks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
   }
   .row {
     display: grid;

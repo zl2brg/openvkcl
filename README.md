@@ -41,9 +41,9 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
    running total and new multipliers for each contact, plus a band and mode
    summary - what the Jock White Field Day summary sheet and the NZART VHF
    contests ask for. For the VHF contests, email it with your station details
-   and signed declaration to vhfcontest@nzart.org.nz within two weeks, and set
-   *Power* to QRP and *Station* to PORTABLE (field station) in the setup to
-   claim those multipliers.
+   and signed declaration to vhfcontest@nzart.org.nz within two weeks. To claim
+   the multipliers, tick the bands you ran QRP on and set *Station* to PORTABLE
+   (field station) in the setup.
 
 In contests that exchange an NZART branch number, the branch box fills in from
 your last contact with that station, so you only type it once.
@@ -115,3 +115,16 @@ Pushing a `v*` tag to GitHub builds installers for all three platforms
 (`.github/workflows/release.yml`) and attaches them to a draft release.
 macOS builds need an Apple Developer ID to be signed and notarised; unsigned
 builds will show a security warning when opened.
+
+## Licence
+
+Copyright © 2026 Simon, ZL2BRG (simon.eatough@gmail.com).
+
+OpenVKCL is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, either version 3 of the License, or (at your option) any later
+version. It is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; see [LICENSE](LICENSE) for details.
+
+The Windows installer includes Hamlib's `rigctld`, which is licensed under the
+GNU LGPL and GPL; its licence files are installed alongside it.

@@ -1,7 +1,8 @@
 {
   "name": "openvkcl",
-  "version": "0.2.0",
-  "description": "",
+  "version": "0.3.0",
+  "description": "Contest logger for Australian and New Zealand contests",
+  "license": "GPL-3.0-or-later",
   "type": "module",
   "scripts": {
     "dev": "vite dev",

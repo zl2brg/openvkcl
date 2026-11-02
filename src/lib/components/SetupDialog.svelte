@@ -154,23 +154,6 @@
           </select>
         </label>
       {/each}
-      {#each bandBonuses as b (b.category)}
-        <div class="bands">
-          {b.label || `${b.value} x${b.factor} on`}
-          <div class="ticks">
-            {#each contest?.bands ?? [] as band (band)}
-              <label class="check">
-                <input
-                  type="checkbox"
-                  checked={bonusBands(b).includes(band)}
-                  onchange={(e) => toggleBonusBand(b, band, e.currentTarget.checked)}
-                />
-                {band}
-              </label>
-            {/each}
-          </div>
-        </div>
-      {/each}
     </section>
 
     <section>
@@ -190,6 +173,23 @@
       </div>
       <label>Location <input bind:value={setup.location} placeholder="e.g. VIC" /></label>
       <label>Soapbox <textarea rows="3" bind:value={setup.soapbox}></textarea></label>
+      {#each bandBonuses as b (b.category)}
+        <div class="bands">
+          {b.label || `${b.value} x${b.factor} on`}
+          <div class="ticks">
+            {#each contest?.bands ?? [] as band (band)}
+              <label class="check">
+                <input
+                  type="checkbox"
+                  checked={bonusBands(b).includes(band)}
+                  onchange={(e) => toggleBonusBand(b, band, e.currentTarget.checked)}
+                />
+                {band}
+              </label>
+            {/each}
+          </div>
+        </div>
+      {/each}
     </section>
   </div>
   {#if error}

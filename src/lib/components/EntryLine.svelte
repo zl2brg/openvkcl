@@ -106,6 +106,7 @@
   function clear() {
     call = "";
     rcvdRst = "";
+    sentRst = "";
     rcvdNr = "";
     rcvdExch = "";
     rcvdLoc = "";
@@ -225,11 +226,17 @@
     </label>
     <label class="sent">
       Sent
-      <input class="mono" value={sentText} readonly tabindex="-1" />
+      <input
+        class="mono"
+        value={sentText}
+        readonly
+        tabindex="-1"
+        style:width="{Math.max(8, sentText.length + 2)}ch"
+      />
     </label>
     {#if hasNr}
       <label class="nr">
-        Nr
+        Nr rcvd
         <input class="mono" bind:this={nrInput} bind:value={rcvdNr} inputmode="numeric" autocomplete="off" />
       </label>
     {/if}
@@ -341,7 +348,6 @@
     width: 11ch;
   }
   .sent input {
-    width: 16ch;
     color: var(--muted);
   }
   .nr input {

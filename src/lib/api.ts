@@ -193,9 +193,40 @@ export interface RigStatus {
   error: string | null;
 }
 
+export interface QrzConfig {
+  enabled: boolean;
+  username: string;
+  password: string;
+}
+
+export interface QrzInfo {
+  call: string;
+  name: string;
+  city: string;
+  state: string;
+  country: string;
+  grid: string;
+  email: string;
+  lat: number | null;
+  lon: number | null;
+}
+
+export interface ScpStatus {
+  count: number;
+  path: string;
+  updated: string | null;
+}
+
+export interface ScpMatches {
+  exact: boolean;
+  partial: string[];
+  near: string[];
+}
+
 export interface Settings {
   station: Station;
   rig: RigConfig;
+  qrz: QrzConfig;
   last_log: string | null;
 }
 
@@ -231,6 +262,12 @@ export const api = {
   rigModels: () => invoke<RigModel[]>("rig_models"),
   serialPorts: () => invoke<SerialPort[]>("serial_ports"),
   appVersion: () => invoke<string>("app_version"),
+  scpStatus: () => invoke<ScpStatus>("scp_status"),
+  scpDownload: () => invoke<ScpStatus>("scp_download"),
+  scpImport: (path: string) => invoke<ScpStatus>("scp_import", { path }),
+  scpLookup: (partial: string) => invoke<ScpMatches>("scp_lookup", { partial }),
+  qrzTest: (config: QrzConfig) => invoke<string>("qrz_test", { config }),
+  qrzLookup: (call: string) => invoke<QrzInfo | null>("qrz_lookup", { call }),
 };
 
 export const RIG_STATUS_EVENT = "rig-status";

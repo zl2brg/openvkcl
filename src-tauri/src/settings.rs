@@ -1,4 +1,5 @@
 use crate::model::Station;
+use crate::qrz::QrzConfig;
 use crate::rig::RigConfig;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -10,6 +11,7 @@ pub struct Settings {
     /// Station details used to pre-fill new logs.
     pub station: Station,
     pub rig: RigConfig,
+    pub qrz: QrzConfig,
     pub last_log: Option<String>,
 }
 

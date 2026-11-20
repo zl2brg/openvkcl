@@ -27,6 +27,11 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 - Radio control for any radio Hamlib supports (just pick the model and serial
   port), FLRig or TCI (cudaSDR, ExpertSDR, Thetis): band, mode and frequency
   follow the radio.
+- Super Check Partial: matching calls from MASTER.SCP and your log, plus N+1
+  (one character different) suggestions, as you type. Download the latest
+  MASTER.SCP from **Lookups…** or import your own file.
+- QRZ.com lookups: name, location and grid for each callsign (needs a QRZ.com
+  XML subscription for more than name and country).
 - Each log is a single SQLite file (`.ovkcl`); every contact is written to disk
   as soon as it's logged.
 
@@ -34,6 +39,8 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 
 1. **New log** - pick the contest, start time, your callsign and exchange details.
 2. Type a callsign. The status line shows DUPE, points and new multipliers as you type.
+   Super Check Partial matches appear underneath (calls already in the log are
+   highlighted; click one to use it), with the QRZ.com details when enabled.
 3. **Space** moves to the next exchange field, **Enter** logs, **Esc** clears.
    Without a radio connected, **Alt+Up/Down** changes band and **Alt+Left/Right** changes mode.
 4. Double-click a contact in the log to edit or delete it. Click the clock to

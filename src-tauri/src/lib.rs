@@ -5,7 +5,9 @@ mod contest;
 mod export;
 mod geo;
 mod model;
+mod qrz;
 mod rig;
+mod scp;
 mod settings;
 mod store;
 
@@ -51,6 +53,12 @@ pub fn run() {
             commands::rig_models,
             commands::serial_ports,
             commands::app_version,
+            commands::scp_status,
+            commands::scp_download,
+            commands::scp_import,
+            commands::scp_lookup,
+            commands::qrz_test,
+            commands::qrz_lookup,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

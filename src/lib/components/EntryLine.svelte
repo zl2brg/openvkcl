@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from "svelte";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import {
     api,
     errorText,
@@ -10,8 +11,10 @@
     type CheckResult,
     type ContestDef,
     type LogSetup,
+    type QrzInfo,
     type QsoInput,
     type RigStatus,
+    type ScpMatches,
   } from "$lib/api";
 
   let {
@@ -20,6 +23,8 @@
     rig,
     logVersion,
     now,
+    worked,
+    qrzEnabled,
     onlog,
     check = $bindable(null),
   }: {
@@ -29,6 +34,9 @@
     /** Changes whenever the log changes, so dupe checks are refreshed. */
     logVersion: number;
     now: Date;
+    /** Calls already in the log, highlighted in the Super Check Partial list. */
+    worked: Set<string>;
+    qrzEnabled: boolean;
     onlog: (input: QsoInput) => Promise<void>;
     check?: CheckResult | null;
   } = $props();
@@ -101,12 +109,67 @@
     return () => clearTimeout(timer);
   });
 
+  let scp = $state<ScpMatches | null>(null);
+  let qrz = $state<QrzInfo | null>(null);
+  let qrzError = $state("");
+
+  let callKey = $derived(call.trim().toUpperCase());
+  let plausible = $derived(/^[A-Z0-9/]{3,}$/.test(callKey) && /\d/.test(callKey) && /[A-Z]/.test(callKey));
+
+  $effect(() => {
+    const partial = callKey;
+    logVersion;
+    const timer = setTimeout(async () => {
+      try {
+        const m = await api.scpLookup(partial);
+        if (partial === untrack(() => callKey)) scp = m;
+      } catch {
+        scp = null;
+      }
+    }, 60);
+    return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    const target = callKey;
+    qrz = null;
+    qrzError = "";
+    if (!qrzEnabled || !plausible) return;
+    const timer = setTimeout(async () => {
+      try {
+        const info = await api.qrzLookup(target);
+        if (target !== untrack(() => callKey)) return;
+        qrz = info;
+        if (!info) qrzError = "not on QRZ.com";
+      } catch (e) {
+        if (target === untrack(() => callKey)) qrzError = errorText(e);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  });
+
+  function pick(c: string) {
+    call = c;
+    callInput?.focus();
+  }
+
+  function useGrid(grid: string) {
+    rcvdLoc = grid.toUpperCase().slice(0, 6);
+    locInput?.focus();
+  }
+
+  function openQrz(e: MouseEvent) {
+    e.preventDefault();
+    openUrl(`https://www.qrz.com/db/${encodeURIComponent(callKey)}`);
+  }
+
   export function focusCall() {
     callInput?.focus();
   }
 
   function clear() {
     call = "";
+    scp = null;
     rcvdRst = "";
     sentRst = "";
     rcvdNr = "";
@@ -305,6 +368,43 @@
       <span class="muted">Space moves between fields · Enter logs · Esc clears · Alt+arrows change band/mode</span>
     {/if}
   </div>
+
+  {#if callKey && scp && (scp.partial.length || scp.near.length)}
+    <div class="scp mono" aria-label="Super Check Partial">
+      {#each scp.partial as c (c)}
+        <button tabindex="-1" class:worked={worked.has(c)} onclick={() => pick(c)} title={worked.has(c) ? "In log" : ""}>{c}</button>
+      {/each}
+      {#if scp.near.length}
+        <span class="label" title="Calls one character different from what you typed">N+1</span>
+        {#each scp.near as c (c)}
+          <button tabindex="-1" class="near" class:worked={worked.has(c)} onclick={() => pick(c)}>{c}</button>
+        {/each}
+      {/if}
+    </div>
+  {/if}
+
+  {#if plausible}
+    <div class="qrz">
+      {#if scp?.exact}<span class="ok" title="In MASTER.SCP or your log">✓ known call</span>{/if}
+      {#if qrz}
+        {@const place = [qrz.city, qrz.state, qrz.country].filter(Boolean).join(", ")}
+        {#if qrz.name}<strong>{qrz.name}</strong>{/if}
+        {#if place}<span>{place}</span>{/if}
+        {#if qrz.grid}
+          {#if hasLoc && !rcvdLoc.trim()}
+            <button tabindex="-1" class="grid mono" onclick={() => useGrid(qrz!.grid)} title="Use this locator (QRZ.com home locator: check with the station)">
+              {qrz.grid}
+            </button>
+          {:else}
+            <span class="mono">{qrz.grid}</span>
+          {/if}
+        {/if}
+      {:else if qrzError}
+        <span class="muted">QRZ: {qrzError}</span>
+      {/if}
+      <a class="link" href="https://www.qrz.com/db/{callKey}" onclick={openQrz} tabindex="-1">QRZ.com ↗</a>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -395,6 +495,42 @@
   }
   .muted {
     color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .scp {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    align-items: center;
+    max-height: 4.2rem;
+    overflow: hidden;
+  }
+  .scp button,
+  .qrz .grid {
+    padding: 1px 6px;
+    font-size: 0.9rem;
+  }
+  .scp button.near {
+    color: var(--muted);
+  }
+  .scp button.worked {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .scp .label {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin: 0 2px 0 8px;
+  }
+  .qrz {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-size: 0.9rem;
+  }
+  .qrz .link {
+    margin-left: auto;
+    color: var(--accent);
     font-size: 0.85rem;
   }
 </style>

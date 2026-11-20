@@ -17,6 +17,7 @@
     type LogView,
     type Qso,
     type QsoInput,
+    type QrzConfig,
     type QsoRow,
     type RigStatus,
     type Settings,
@@ -30,6 +31,7 @@
   import EditQsoDialog from "$lib/components/EditQsoDialog.svelte";
   import CabrilloDialog from "$lib/components/CabrilloDialog.svelte";
   import AboutDialog from "$lib/components/AboutDialog.svelte";
+  import LookupDialog from "$lib/components/LookupDialog.svelte";
 
   const LOG_FILTER = [{ name: "OpenVKCL log", extensions: ["ovkcl"] }];
 
@@ -48,12 +50,14 @@
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
   let rigDialog = $state(false);
   let aboutDialog = $state(false);
+  let lookupDialog = $state(false);
   let editRow = $state<QsoRow | null>(null);
   let cabrillo = $state<string | null>(null);
 
   let entry: EntryLine | undefined = $state();
 
   let fileName = $derived(view?.path.split(/[\\/]/).pop() ?? "");
+  let worked = $derived(new Set(view?.qsos.map((q) => q.call) ?? []));
 
   function say(text: string, isError = false) {
     notice = text;
@@ -251,6 +255,18 @@
     }
   }
 
+  async function saveLookups(qrz: QrzConfig) {
+    if (!settings) return;
+    try {
+      settings.qrz = qrz;
+      await api.saveSettings($state.snapshot(settings) as Settings);
+      lookupDialog = false;
+      refocus();
+    } catch (e) {
+      say(errorText(e), true);
+    }
+  }
+
   async function connectRig(config: Settings["rig"]) {
     try {
       await api.rigConnect(config);
@@ -304,6 +320,7 @@
     </button>
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
+    <button onclick={() => (lookupDialog = true)} title="Super Check Partial and QRZ.com">Lookups…</button>
     <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
       <span class="notice" class:error={noticeIsError}>{notice}</span>
@@ -321,6 +338,8 @@
           {rig}
           {logVersion}
           {now}
+          {worked}
+          qrzEnabled={!!settings?.qrz.enabled}
           onlog={logQso}
         />
         <div class="table">
@@ -385,6 +404,17 @@
     onconnect={connectRig}
     onclose={() => {
       rigDialog = false;
+      refocus();
+    }}
+  />
+{/if}
+
+{#if lookupDialog && settings}
+  <LookupDialog
+    initial={settings.qrz}
+    onsave={saveLookups}
+    onclose={() => {
+      lookupDialog = false;
       refocus();
     }}
   />

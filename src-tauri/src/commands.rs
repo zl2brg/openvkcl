@@ -3,8 +3,10 @@ use crate::contest::engine::{self, QsoResult, Score};
 use crate::contest::{self, ContestDef};
 use crate::export::{adif, cabrillo, scoresheet};
 use crate::model::{LogSetup, Qso, QsoInput};
+use crate::qrz::{Qrz, QrzConfig, QrzInfo};
 use crate::rig::hamlib::{self, RigModel, SerialPort};
 use crate::rig::{Rig, RigConfig, RigKind, RigStatus, tci};
+use crate::scp::{self, Scp, ScpMatches};
 use crate::settings::Settings;
 use crate::store::Store;
 use crate::{callsign, geo};
@@ -34,6 +36,9 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub settings_path: PathBuf,
     pub rig: Rig,
+    pub scp: Mutex<Scp>,
+    pub scp_path: PathBuf,
+    pub qrz: Qrz,
 }
 
 impl AppState {
@@ -41,6 +46,7 @@ impl AppState {
         let contest_dir = config_dir.join("contests");
         let (defs, errors) = contest::load_all(Some(&contest_dir));
         let settings_path = config_dir.join("settings.json");
+        let scp_path = config_dir.join("MASTER.SCP");
         AppState {
             log: Mutex::new(None),
             contests: Mutex::new(defs),
@@ -49,6 +55,9 @@ impl AppState {
             settings: Mutex::new(Settings::load(&settings_path)),
             settings_path,
             rig: Rig::default(),
+            scp: Mutex::new(Scp::load(&scp_path)),
+            scp_path,
+            qrz: Qrz::default(),
         }
     }
 
@@ -91,6 +100,15 @@ pub struct ContestList {
     contests: Vec<ContestDef>,
     errors: Vec<String>,
     user_dir: String,
+}
+
+#[derive(Serialize)]
+pub struct ScpStatus {
+    /// Calls in MASTER.SCP; 0 when there is none.
+    count: usize,
+    path: String,
+    /// When MASTER.SCP was last downloaded or imported.
+    updated: Option<chrono::DateTime<Utc>>,
 }
 
 #[derive(Serialize)]
@@ -439,4 +457,90 @@ pub async fn serial_ports() -> Vec<SerialPort> {
 #[tauri::command]
 pub fn app_version() -> &'static str {
     VERSION
+}
+
+fn scp_status_of(state: &AppState) -> ScpStatus {
+    ScpStatus {
+        count: state.scp.lock().unwrap().len(),
+        path: state.scp_path.display().to_string(),
+        updated: std::fs::metadata(&state.scp_path)
+            .and_then(|m| m.modified())
+            .ok()
+            .map(chrono::DateTime::<Utc>::from),
+    }
+}
+
+/// Check `text` looks like MASTER.SCP, save it as ours and start using it.
+fn install_scp(state: &AppState, text: &str) -> CmdResult<ScpStatus> {
+    let db = Scp::parse(text);
+    if db.len() < 10 || !db.calls().iter().take(100).all(|c| callsign::is_plausible(c)) {
+        return Err("That doesn't look like a MASTER.SCP file (one callsign per line)".into());
+    }
+    if let Some(dir) = state.scp_path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(&state.scp_path, text).map_err(|e| format!("{}: {e}", state.scp_path.display()))?;
+    *state.scp.lock().unwrap() = db;
+    Ok(scp_status_of(state))
+}
+
+#[tauri::command]
+pub fn scp_status(state: State<AppState>) -> ScpStatus {
+    scp_status_of(&state)
+}
+
+#[tauri::command]
+pub async fn scp_download(state: State<'_, AppState>) -> CmdResult<ScpStatus> {
+    let fail = |e: reqwest::Error| format!("Downloading MASTER.SCP failed: {e}");
+    let text = reqwest::Client::new()
+        .get(scp::DOWNLOAD_URL)
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(fail)?
+        .text()
+        .await
+        .map_err(fail)?;
+    install_scp(&state, &text)
+}
+
+#[tauri::command]
+pub fn scp_import(state: State<AppState>, path: String) -> CmdResult<ScpStatus> {
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
+    install_scp(&state, &text)
+}
+
+/// Calls from MASTER.SCP and the open log that match what has been typed so far.
+#[tauri::command]
+pub fn scp_lookup(state: State<AppState>, partial: String) -> ScpMatches {
+    let log_calls: Vec<String> = state
+        .log
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|l| l.qsos.iter().map(|q| q.call.clone()).collect())
+        .unwrap_or_default();
+    let db = state.scp.lock().unwrap();
+    let sources = db.calls().iter().chain(log_calls.iter()).map(String::as_str);
+    scp::lookup(&partial, sources, 30)
+}
+
+fn qrz_agent() -> String {
+    format!("OpenVKCL/{VERSION}")
+}
+
+/// Log in with `config` (which may not be saved yet) to check it works.
+#[tauri::command]
+pub async fn qrz_test(state: State<'_, AppState>, config: QrzConfig) -> CmdResult<String> {
+    state.qrz.test(&config, &qrz_agent()).await
+}
+
+#[tauri::command]
+pub async fn qrz_lookup(state: State<'_, AppState>, call: String) -> CmdResult<Option<QrzInfo>> {
+    let cfg = state.settings.lock().unwrap().qrz.clone();
+    if !cfg.enabled || !callsign::is_plausible(&call) {
+        return Ok(None);
+    }
+    state.qrz.lookup(&cfg, &qrz_agent(), &call).await
 }

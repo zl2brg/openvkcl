@@ -282,6 +282,17 @@ export function hhmm(iso: string): string {
   return `${pad(h)}${pad(m)}`;
 }
 
+/** How long until `iso`, e.g. "in 60 mins", "in 1 h 15 mins", or "now". */
+export function untilText(iso: string, now: Date = new Date()): string {
+  const mins = Math.ceil((new Date(iso).getTime() - now.getTime()) / 60_000);
+  if (mins <= 0) return "now";
+  if (mins < 60) return mins === 1 ? "in 1 min" : `in ${mins} mins`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (m === 0) return h === 1 ? "in 1 hour" : `in ${h} hours`;
+  return `in ${h} h ${m} min${m === 1 ? "" : "s"}`;
+}
+
 /** "13:05:09" in the display time zone. */
 export function clockText(d: Date): string {
   const [, , , h, m, s] = parts(d);

@@ -6,7 +6,7 @@ cabrillo_name = "WIA_VHFUHF"
 rules_url = "https://www.wia.org.au/members/contests/vhfuhf/"
 duration_minutes = 1440
 default_start_utc = "01:00"
-bands = ["6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+bands = ["6m", "2m", "70cm", "1.2G", "2.3G", "3.4G", "5.7G", "10G", "24G", "47G", "75G", "122G", "134G", "241G"]
 modes = ["PH", "CW", "DG"]
 exchange = ["rst", "serial", "locator"]
 
@@ -30,7 +30,7 @@ taper_divisor = 100
 taper_bands = ["6m", "2m", "70cm"]
 # Distances are measured between sub-square (6-character) centres.
 max_locator_chars = 6
-band_factor = { "6m" = 1.7, "2m" = 1.0, "70cm" = 2.7, "23cm" = 3.7, "13cm" = 4.4, "9cm" = 5.4, "6cm" = 6.4, "3cm" = 7.4, "1.25cm" = 10, "6mm" = 10, "4mm" = 10, "2.5mm" = 10, "2mm" = 10, "1mm" = 10 }
+band_factor = { "6m" = 1.7, "2m" = 1.0, "70cm" = 2.7, "1.2G" = 3.7, "2.3G" = 4.4, "3.4G" = 5.4, "5.7G" = 6.4, "10G" = 7.4, "24G" = 10, "47G" = 10, "75G" = 10, "122G" = 10, "134G" = 10, "241G" = 10 }
 
 [[categories]]
 key = "CATEGORY-OPERATOR"

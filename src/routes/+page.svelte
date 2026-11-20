@@ -320,6 +320,7 @@
           setup={view.setup}
           {rig}
           {logVersion}
+          {now}
           onlog={logQso}
         />
         <div class="table">

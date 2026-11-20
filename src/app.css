@@ -4,19 +4,41 @@
   --panel-2: #212833;
   --border: #2e3846;
   --fg: #e3e8ef;
-  --muted: #8a97a8;
+  --muted: #a8b4c4;
   --accent: #5cb8ff;
   --ok: #4cd07d;
   --bad: #ff6b6b;
   --warn: #f2c14e;
   --hover: #243041;
   --highlight: #2a3a52;
+  --primary: #1f6fb2;
+  --primary-border: #2b82cc;
+  --primary-hover: #2680cc;
 
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
   font-size: 15px;
   color: var(--fg);
   background: var(--bg);
   color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #eef1f5;
+  --panel: #ffffff;
+  --panel-2: #e4e9ef;
+  --border: #c5ced9;
+  --fg: #1a2330;
+  --muted: #3d4f63;
+  --accent: #0b6bcb;
+  --ok: #1a8f4a;
+  --bad: #c62828;
+  --warn: #9a7200;
+  --hover: #d7dee8;
+  --highlight: #d0e2f7;
+  --primary: #0b6bcb;
+  --primary-border: #0a5fb0;
+  --primary-hover: #0956a0;
+  color-scheme: light;
 }
 
 * {
@@ -87,13 +109,13 @@ button:disabled {
 }
 
 button.primary {
-  background: #1f6fb2;
-  border-color: #2b82cc;
+  background: var(--primary);
+  border-color: var(--primary-border);
   color: white;
 }
 
 button.primary:hover:not(:disabled) {
-  background: #2680cc;
+  background: var(--primary-hover);
 }
 
 button.danger {

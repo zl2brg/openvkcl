@@ -160,7 +160,7 @@ fn draft_qso(log: &OpenLog, input: &QsoInput) -> Qso {
         id: -1,
         time: input.time.unwrap_or_else(Utc::now),
         call: callsign::normalize(&input.call),
-        band: input.band.clone(),
+        band: crate::bands::canonical(&input.band),
         mode: input.mode.clone(),
         freq_khz: input.freq_khz,
         sent_rst: rst(&input.sent_rst),

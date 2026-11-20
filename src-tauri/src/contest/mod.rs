@@ -261,7 +261,7 @@ mod tests {
             nz_qso(5, m(63), "ZL2BBB", "6m", "DG", "RE66hq"),   // 25 x 1.5 = 37.5 -> 38
             nz_qso(6, m(64), "ZL3CCC", "2m", "RY", "RE78ir"),   // 20 x 1.5 = 30
             nz_qso(7, m(400), "ZL4DDD", "2m", "PH", "RE78ir"),  // between periods: 20, warned
-            nz_qso(8, m(841), "ZL4DDD", "23cm", "PH", "RF73jb"), // 15.5 x 0.2 = 3.1 -> 3
+            nz_qso(8, m(841), "ZL4DDD", "1.2G", "PH", "RF73jb"), // 15.5 x 0.2 = 3.1 -> 3
         ];
         let e = evaluate(&d, &s, &qsos);
         let pts: Vec<f64> = e.results.iter().map(|r| r.points).collect();
@@ -277,7 +277,7 @@ mod tests {
             .filter(|g| g.qsos > 0)
             .map(|g| (g.name.as_str(), g.score))
             .collect();
-        assert_eq!(groups, vec![("6m", 38.0), ("2m", 52.0), ("70cm", 10.0), ("23cm", 3.0)]);
+        assert_eq!(groups, vec![("6m", 38.0), ("2m", 52.0), ("70cm", 10.0), ("1.2G", 3.0)]);
         assert_eq!(e.score.total, 103.0);
 
         // QRP x1.5 then field station x1.2, applied to the rounded basic score.
@@ -413,7 +413,7 @@ mod tests {
         let low = def("nzart-vhf-lowband");
         let s = setup("nzart-vhf-lowband", start);
         let qsos = vec![
-            nz_qso(1, m(1), "ZL1AAA", "23cm", "PH", "RF73jb"),
+            nz_qso(1, m(1), "ZL1AAA", "1.2G", "PH", "RF73jb"),
             // 1250 minutes in: 1254 NZST after daylight saving ends.
             nz_qso(2, m(1254), "ZL1AAA", "2m", "PH", "RF73jb"),
         ];
@@ -423,7 +423,7 @@ mod tests {
 
         let mw = def("nzart-vhf-microwave");
         let s = setup("nzart-vhf-microwave", start);
-        let mut q = nz_qso(1, m(1), "ZL1AAA", "3cm", "PH", "RF73jb12");
+        let mut q = nz_qso(1, m(1), "ZL1AAA", "10G", "PH", "RF73jb12");
         q.sent_locator = "RF73hc34".into();
         let e = evaluate(&mw, &s, &[q.clone(), nz_qso(2, m(2), "ZL1AAA", "2m", "PH", "RF73jb")]);
         assert!(e.results[1].invalid.is_some());

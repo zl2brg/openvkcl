@@ -4,8 +4,8 @@
     api,
     errorText,
     dateTimeText,
-    hhmm,
     parseDateTimeText,
+    untilText,
     zoneLabel,
     type CheckResult,
     type ContestDef,
@@ -19,6 +19,7 @@
     setup,
     rig,
     logVersion,
+    now,
     onlog,
     check = $bindable(null),
   }: {
@@ -27,6 +28,7 @@
     rig: RigStatus;
     /** Changes whenever the log changes, so dupe checks are refreshed. */
     logVersion: number;
+    now: Date;
     onlog: (input: QsoInput) => Promise<void>;
     check?: CheckResult | null;
   } = $props();
@@ -288,7 +290,7 @@
       {:else if r.dupe}
         <span class="bad strong">DUPE</span>
         {#if r.next_ok}
-          <span>can work again from {hhmm(r.next_ok)} {zoneLabel()}</span>
+          <span>can work again {untilText(r.next_ok, now)}</span>
         {:else}
           <span>already worked on this {contest.rework.per.includes("band") ? "band and " : ""}mode</span>
         {/if}
@@ -330,7 +332,8 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    font-size: 0.75rem;
+    font-size: 0.85rem;
+    font-weight: 600;
     color: var(--muted);
   }
   label.check {
@@ -360,7 +363,7 @@
     width: 4.5ch;
   }
   .time {
-    width: 17ch;
+    width: 19ch;
   }
   .log {
     height: 2.6rem;

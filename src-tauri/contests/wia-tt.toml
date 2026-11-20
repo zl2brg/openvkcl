@@ -69,5 +69,5 @@ default = "ONE"
 
 [[categories]]
 key = "CATEGORY-OVERLAY"
-options = ["", "YOUTH"]
+options = ["", "YOUTH", "ROOKIE", "YL"]
 default = ""

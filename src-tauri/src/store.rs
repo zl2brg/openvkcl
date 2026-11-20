@@ -1,3 +1,4 @@
+use crate::bands;
 use crate::model::{LogSetup, Qso};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params};
@@ -58,7 +59,7 @@ fn row_to_qso(row: &Row) -> rusqlite::Result<Qso> {
         id: row.get(0)?,
         time,
         call: row.get(2)?,
-        band: row.get(3)?,
+        band: bands::canonical(&row.get::<_, String>(3)?),
         mode: row.get(4)?,
         freq_khz: row.get(5)?,
         sent_rst: row.get(6)?,
@@ -120,7 +121,12 @@ impl Store {
         let setup = store
             .meta("setup")?
             .ok_or("Log file has no contest setup")?;
-        let setup: LogSetup = serde_json::from_str(&setup).map_err(err)?;
+        let mut setup: LogSetup = serde_json::from_str(&setup).map_err(err)?;
+        for bands in setup.bonus_bands.values_mut() {
+            for b in bands.iter_mut() {
+                *b = bands::canonical(b);
+            }
+        }
         Ok((store, setup))
     }
 
@@ -179,7 +185,7 @@ impl Store {
                 params![
                     time_str(&q.time),
                     q.call,
-                    q.band,
+                    bands::canonical(&q.band),
                     q.mode,
                     q.freq_khz,
                     q.sent_rst,
@@ -210,7 +216,7 @@ impl Store {
                     q.id,
                     time_str(&q.time),
                     q.call,
-                    q.band,
+                    bands::canonical(&q.band),
                     q.mode,
                     q.freq_khz,
                     q.sent_rst,

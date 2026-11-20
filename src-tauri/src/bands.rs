@@ -36,27 +36,67 @@ pub const BANDS: &[Band] = &[
     band("2m", 144_000.0, 148_000.0, "144"),
     band("70cm", 420_000.0, 450_000.0, "432"),
     band("33cm", 902_000.0, 930_000.0, "902"),
-    band("23cm", 1_240_000.0, 1_300_000.0, "1.2G"),
-    band("13cm", 2_300_000.0, 2_450_000.0, "2.3G"),
-    band("9cm", 3_300_000.0, 3_600_000.0, "3.4G"),
-    band("6cm", 5_650_000.0, 5_925_000.0, "5.7G"),
-    band("3cm", 10_000_000.0, 10_500_000.0, "10G"),
-    band("1.25cm", 24_000_000.0, 24_250_000.0, "24G"),
-    band("6mm", 47_000_000.0, 47_200_000.0, "47G"),
-    band("4mm", 75_500_000.0, 81_000_000.0, "75G"),
-    band("2.5mm", 119_980_000.0, 123_000_000.0, "122G"),
-    band("2mm", 134_000_000.0, 149_000_000.0, "134G"),
-    band("1mm", 241_000_000.0, 250_000_000.0, "241G"),
+    band("1.2G", 1_240_000.0, 1_300_000.0, "1.2G"),
+    band("2.3G", 2_300_000.0, 2_450_000.0, "2.3G"),
+    band("3.4G", 3_300_000.0, 3_600_000.0, "3.4G"),
+    band("5.7G", 5_650_000.0, 5_925_000.0, "5.7G"),
+    band("10G", 10_000_000.0, 10_500_000.0, "10G"),
+    band("24G", 24_000_000.0, 24_250_000.0, "24G"),
+    band("47G", 47_000_000.0, 47_200_000.0, "47G"),
+    band("75G", 75_500_000.0, 81_000_000.0, "75G"),
+    band("122G", 119_980_000.0, 123_000_000.0, "122G"),
+    band("134G", 134_000_000.0, 149_000_000.0, "134G"),
+    band("241G", 241_000_000.0, 250_000_000.0, "241G"),
 ];
 
+/// Older wavelength names for microwave bands → current GHz labels.
+const ALIASES: &[(&str, &str)] = &[
+    ("23cm", "1.2G"),
+    ("13cm", "2.3G"),
+    ("9cm", "3.4G"),
+    ("6cm", "5.7G"),
+    ("3cm", "10G"),
+    ("1.25cm", "24G"),
+    ("6mm", "47G"),
+    ("4mm", "75G"),
+    ("2.5mm", "122G"),
+    ("2mm", "134G"),
+    ("1mm", "241G"),
+];
+
+/// Canonical band name used in the UI, contests and log files.
+pub fn canonical(name: &str) -> String {
+    for (old, new) in ALIASES {
+        if name.eq_ignore_ascii_case(old) {
+            return (*new).into();
+        }
+    }
+    if let Some(b) = BANDS.iter().find(|b| b.name.eq_ignore_ascii_case(name)) {
+        return b.name.into();
+    }
+    name.to_string()
+}
+
 pub fn by_name(name: &str) -> Option<&'static Band> {
-    BANDS.iter().find(|b| b.name.eq_ignore_ascii_case(name))
+    let name = canonical(name);
+    BANDS.iter().find(|b| b.name == name)
 }
 
 pub fn from_khz(khz: f64) -> Option<&'static Band> {
     BANDS
         .iter()
         .find(|b| khz >= b.lower_khz && khz <= b.upper_khz)
+}
+
+/// ADIF `BAND` values still use the wavelength names for microwave bands.
+pub fn adif_band(name: &str) -> String {
+    let name = canonical(name);
+    for (old, new) in ALIASES {
+        if name == *new {
+            return (*old).into();
+        }
+    }
+    name
 }
 
 /// Frequency column for a Cabrillo QSO line: kHz on HF, band designator above.
@@ -81,10 +121,16 @@ mod tests {
     fn lookup() {
         assert_eq!(from_khz(7_090.0).unwrap().name, "40m");
         assert_eq!(from_khz(144_150.0).unwrap().name, "2m");
+        assert_eq!(from_khz(1_296_000.0).unwrap().name, "1.2G");
         assert!(from_khz(9_000.0).is_none());
         assert_eq!(cabrillo_freq("40m", Some(7_090.4)), "7090");
         assert_eq!(cabrillo_freq("40m", None), "7000");
         assert_eq!(cabrillo_freq("2m", Some(144_150.0)), "144");
+        assert_eq!(cabrillo_freq("1.2G", None), "1.2G");
         assert_eq!(cabrillo_freq("23cm", None), "1.2G");
+        assert_eq!(canonical("23cm"), "1.2G");
+        assert_eq!(adif_band("1.2G"), "23cm");
+        assert_eq!(adif_band("23cm"), "23cm");
+        assert_eq!(adif_band("70cm"), "70cm");
     }
 }

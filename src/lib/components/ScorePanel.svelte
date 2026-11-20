@@ -154,7 +154,8 @@
   }
   h3 {
     margin: 0 0 6px;
-    font-size: 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--muted);

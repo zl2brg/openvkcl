@@ -1,3 +1,4 @@
+use crate::bands;
 use crate::contest::ContestDef;
 use crate::contest::def::ExchField;
 use crate::model::{LogSetup, Qso};
@@ -33,7 +34,7 @@ pub fn render(def: &ContestDef, setup: &LogSetup, qsos: &[Qso], version: &str) -
         field(&mut out, "CALL", &q.call.to_ascii_uppercase());
         field(&mut out, "QSO_DATE", &q.time.format("%Y%m%d").to_string());
         field(&mut out, "TIME_ON", &q.time.format("%H%M%S").to_string());
-        field(&mut out, "BAND", &q.band);
+        field(&mut out, "BAND", &bands::adif_band(&q.band));
         field(&mut out, "MODE", adif_mode(&q.mode));
         if let Some(f) = q.freq_khz {
             field(&mut out, "FREQ", &format!("{:.4}", f / 1000.0));

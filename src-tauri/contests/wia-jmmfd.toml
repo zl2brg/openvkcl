@@ -6,7 +6,7 @@ cabrillo_name = "WIA-JMMFD"
 rules_url = "https://www.wia.org.au/members/contests/johnmoyle/"
 duration_minutes = 1440
 default_start_utc = "01:00"
-bands = ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+bands = ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m", "70cm", "1.2G", "2.3G", "3.4G", "5.7G", "10G", "24G", "47G", "75G", "122G", "134G", "241G"]
 modes = ["PH", "CW"]
 exchange = ["rst", "serial"]
 
@@ -36,7 +36,7 @@ bands = ["160m", "80m", "40m", "20m", "15m", "10m"]
 
 [[score_groups]]
 name = "VHF+"
-bands = ["6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+bands = ["6m", "2m", "70cm", "1.2G", "2.3G", "3.4G", "5.7G", "10G", "24G", "47G", "75G", "122G", "134G", "241G"]
 
 [[categories]]
 key = "CATEGORY-OPERATOR"
@@ -80,5 +80,5 @@ default = "24-HOURS"
 
 [[categories]]
 key = "CATEGORY-OVERLAY"
-options = ["", "YOUTH"]
+options = ["", "YOUTH", "ROOKIE", "YL"]
 default = ""

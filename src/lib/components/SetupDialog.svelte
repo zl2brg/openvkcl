@@ -227,7 +227,8 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
+    font-weight: 600;
     text-transform: capitalize;
   }
   label.check {

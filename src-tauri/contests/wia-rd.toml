@@ -6,7 +6,7 @@ cabrillo_name = "WIA-REMEMBRANCE"
 rules_url = "https://www.wia.org.au/members/contests/rdcontest/"
 duration_minutes = 1440
 default_start_utc = "03:00"
-bands = ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m", "70cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm"]
+bands = ["160m", "80m", "40m", "20m", "15m", "10m", "6m", "2m", "70cm", "1.2G", "2.3G", "3.4G", "5.7G", "10G", "24G"]
 modes = ["PH", "CW", "RY"]
 exchange = ["rst", "number"]
 number_label = "Years"
@@ -26,7 +26,7 @@ formula = "sum_points"
 
 [scoring.points]
 kind = "fixed"
-band = { "160m" = 2, "23cm" = 2, "13cm" = 2, "9cm" = 2, "6cm" = 2, "3cm" = 2, "1.25cm" = 2 }
+band = { "160m" = 2, "1.2G" = 2, "2.3G" = 2, "3.4G" = 2, "5.7G" = 2, "10G" = 2, "24G" = 2 }
 mode = { CW = 2, RY = 2 }
 local_time = { from = "01:00", to = "06:00", factor = 3 }
 
@@ -67,5 +67,5 @@ default = "ONE"
 
 [[categories]]
 key = "CATEGORY-OVERLAY"
-options = ["", "YOUTH"]
+options = ["", "YOUTH", "ROOKIE", "YL"]
 default = ""

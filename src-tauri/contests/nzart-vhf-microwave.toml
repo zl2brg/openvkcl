@@ -11,7 +11,7 @@ cabrillo_name = "NZART-VHF-UHF-SHF-EHF"
 rules_url = "https://nzart.org.nz/activities/contests/vhf/"
 duration_minutes = 1200
 default_start_utc = "04:00"
-bands = ["33cm", "23cm", "13cm", "9cm", "6cm", "3cm", "1.25cm", "6mm", "4mm", "2.5mm", "2mm", "1mm"]
+bands = ["33cm", "1.2G", "2.3G", "3.4G", "5.7G", "10G", "24G", "47G", "75G", "122G", "134G", "241G"]
 modes = ["PH", "CW", "RY", "DG"]
 exchange = ["rst", "serial", "locator"]
 # Each band is a separate mini-contest with its own serial numbers.
@@ -54,7 +54,7 @@ factor = 1.2
 kind = "distance"
 # Machine modes (RTTY, packet, WSJT...) score x1.5.
 mode = { RY = 1.5, DG = 1.5 }
-band_factor = { "33cm" = 0.3, "23cm" = 0.2, "13cm" = 0.5, "9cm" = 1, "6cm" = 1, "3cm" = 1, "1.25cm" = 1, "6mm" = 1, "4mm" = 1, "2.5mm" = 1, "2mm" = 1, "1mm" = 1 }
+band_factor = { "33cm" = 0.3, "1.2G" = 0.2, "2.3G" = 0.5, "3.4G" = 1, "5.7G" = 1, "10G" = 1, "24G" = 1, "47G" = 1, "75G" = 1, "122G" = 1, "134G" = 1, "241G" = 1 }
 
 # Each band is scored as a separate mini-contest.
 [[score_groups]]
@@ -62,48 +62,48 @@ name = "33cm"
 bands = ["33cm"]
 
 [[score_groups]]
-name = "23cm"
-bands = ["23cm"]
+name = "1.2G"
+bands = ["1.2G"]
 
 [[score_groups]]
-name = "13cm"
-bands = ["13cm"]
+name = "2.3G"
+bands = ["2.3G"]
 
 [[score_groups]]
-name = "9cm"
-bands = ["9cm"]
+name = "3.4G"
+bands = ["3.4G"]
 
 [[score_groups]]
-name = "6cm"
-bands = ["6cm"]
+name = "5.7G"
+bands = ["5.7G"]
 
 [[score_groups]]
-name = "3cm"
-bands = ["3cm"]
+name = "10G"
+bands = ["10G"]
 
 [[score_groups]]
-name = "1.25cm"
-bands = ["1.25cm"]
+name = "24G"
+bands = ["24G"]
 
 [[score_groups]]
-name = "6mm"
-bands = ["6mm"]
+name = "47G"
+bands = ["47G"]
 
 [[score_groups]]
-name = "4mm"
-bands = ["4mm"]
+name = "75G"
+bands = ["75G"]
 
 [[score_groups]]
-name = "2.5mm"
-bands = ["2.5mm"]
+name = "122G"
+bands = ["122G"]
 
 [[score_groups]]
-name = "2mm"
-bands = ["2mm"]
+name = "134G"
+bands = ["134G"]
 
 [[score_groups]]
-name = "1mm"
-bands = ["1mm"]
+name = "241G"
+bands = ["241G"]
 
 [[categories]]
 key = "CATEGORY-OPERATOR"

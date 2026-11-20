@@ -102,7 +102,8 @@
     background: var(--panel-2);
     text-align: left;
     font-weight: 600;
-    font-size: 0.75rem;
+    font-size: 0.8rem;
+    font-weight: 600;
     text-transform: uppercase;
     color: var(--muted);
     padding: 6px 8px;

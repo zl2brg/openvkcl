@@ -26,12 +26,13 @@ pub struct ScpMatches {
 }
 
 impl Scp {
-    /// Parse MASTER.SCP text: one call per line, '#' starts a comment line.
+    /// Parse MASTER.SCP text: one call per line, '#' starts a comment line and
+    /// '!!' a directive line (current files open with `!!Order,1,1`).
     pub fn parse(text: &str) -> Scp {
         let mut calls: Vec<String> = text
             .lines()
             .map(str::trim)
-            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .filter(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with("!!"))
             .map(|l| l.to_ascii_uppercase())
             .collect();
         calls.sort();
@@ -132,6 +133,12 @@ mod tests {
         let s = db();
         assert_eq!(s.len(), 6);
         assert!(s.calls().contains(&"VK2ABC".to_string()));
+    }
+
+    #[test]
+    fn skips_directives() {
+        let s = Scp::parse("!!Order,1,1\n#\n# Release 2026.11.20\n#\nVK4ABC\nZL2ABC\n");
+        assert_eq!(s.calls(), ["VK4ABC", "ZL2ABC"]);
     }
 
     #[test]

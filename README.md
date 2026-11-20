@@ -17,9 +17,12 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
   numbers per band, and branch-number multipliers.
 - NZART VHF-UHF-SHF-EHF contests: DX Weekend, Low Band, Microwave and Field Day,
   with hourly periods, the Table 1 distance scores, points per km above 70 cm,
-  and the machine-mode, QRP and field-station multipliers.
+  and the machine-mode, QRP and field-station multipliers. Microwave bands are
+  labelled in GHz in the UI (`1.2G`, `2.3G`, …); Cabrillo still uses the same
+  band designators.
 - Live dupe checking with each contest's re-work rules (time intervals, time
-  blocks, new grid square), points, multipliers and running score.
+  blocks, new grid square), points, multipliers and running score. When a
+  station is a dupe, the wait is shown as “in 60 mins” (and counts down).
 - Distance scoring from 6, 8 or 10-character Maidenhead locators.
 - Cabrillo 3.0 export with the contest names vklogchecker.com expects, plus ADIF
   and a per-band CSV score sheet (distance, claimed points and running total
@@ -32,12 +35,14 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
   MASTER.SCP from **Lookups…** or import your own file.
 - QRZ.com lookups: name, location and grid for each callsign (needs a QRZ.com
   XML subscription for more than name and country).
+- Dark appearance by default, with an optional light theme in **About**.
 - Each log is a single SQLite file (`.ovkcl`); every contact is written to disk
   as soon as it's logged.
 
 ## Using it
 
 1. **New log** - pick the contest, start time, your callsign and exchange details.
+   WIA contests that use an overlay offer Youth, Rookie and YL as well as none.
 2. Type a callsign. The status line shows DUPE, points and new multipliers as you type.
    Super Check Partial matches appear underneath (calls already in the log are
    highlighted; click one to use it), with the QRZ.com details when enabled.
@@ -54,6 +59,8 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
    and signed declaration to vhfcontest@nzart.org.nz within two weeks. To claim
    the multipliers, tick the bands you ran QRP on and set *Station* to PORTABLE
    (field station) in the setup.
+7. **About** shows the version, licence and author details, and lets you switch
+   between dark and light appearance.
 
 In contests that exchange an NZART branch number, the branch box fills in from
 your last contact with that station, so you only type it once.
@@ -80,6 +87,9 @@ OpenVKCL talks to the radio through one of:
 
 Choose **Radio…** and connect. The connection is remembered and re-established
 when the app starts.
+
+On Linux, the packaged app appears under the **Hamradio** menu where that
+submenu exists (KDE with `extra-xdg-menus`), otherwise under Internet.
 
 ## Contest definitions
 

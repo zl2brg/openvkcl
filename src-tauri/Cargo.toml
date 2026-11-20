@@ -1,6 +1,6 @@
 [package]
 name = "openvkcl"
-version = "0.5.0"
+version = "0.5.1"
 description = "Contest logger for Australian and New Zealand contests"
 authors = ["Simon, ZL2BRG <simon.eatough@gmail.com>"]
 license = "GPL-3.0-or-later"

@@ -93,6 +93,10 @@ submenu exists (KDE with `extra-xdg-menus`), otherwise under Internet.
 
 ## Contest definitions
 
+How the five distance-scored contests turn a locator pair into points is
+described in [Radial distance scoring](docs/radial-distance-scoring.md).
+The other contests award fixed points.
+
 Contest rules live in TOML files in [`src-tauri/contests`](src-tauri/contests)
 and are built into the app. To change a rule without rebuilding, or to add a
 contest, put a `.toml` file in the app's `contests` folder; a file with the same

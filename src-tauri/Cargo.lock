@@ -2671,7 +2671,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "openvkcl"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "chrono",
  "futures-util",

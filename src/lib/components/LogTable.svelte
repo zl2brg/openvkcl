@@ -155,7 +155,7 @@
       onkeydown={onSearchKeydown}
       class="mono"
       type="search"
-      placeholder="Search callsign"
+      placeholder="Search log"
       aria-label="Search the log by callsign"
       title="Find a callsign in the log (Ctrl+F / ⌘F). Esc clears."
       spellcheck="false"

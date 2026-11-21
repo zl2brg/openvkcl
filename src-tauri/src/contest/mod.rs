@@ -147,10 +147,10 @@ mod tests {
         assert_eq!(e.results[2].rework_at, Some(m(15 + 180)));
         assert_eq!(e.results[4].rework_at, Some(m(200 + 180)));
         assert_eq!(e.results[5].rework_at, Some(m(25 + 180)));
-        // 3 h after 12:00 is still inside the 24 h contest; 22:00 + 3 h isn't.
         assert_eq!(e.results[6].rework_at, Some(m(12 * 60 + 180)));
+        // Still counts down when the contest ends first, like the dupe message.
         let late = evaluate(&d, &s, &[qso(9, m(22 * 60), "VK5DEF", "80m", "PH")]);
-        assert_eq!(late.results[0].rework_at, None);
+        assert_eq!(late.results[0].rework_at, Some(m(22 * 60 + 180)));
         assert!(e.results[7].invalid.is_some());
         assert_eq!(e.score.total, 11.0);
         assert_eq!(e.score.dupes, 2);

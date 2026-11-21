@@ -22,7 +22,7 @@ pub struct QsoResult {
     /// For dupes, when this station can next be worked on this band and mode.
     pub next_ok: Option<DateTime<Utc>>,
     /// For the latest counted contact with a station on a band and mode, when
-    /// it can be worked again there; None if it never can before the contest ends.
+    /// it can be worked again there.
     pub rework_at: Option<DateTime<Utc>>,
 }
 
@@ -329,7 +329,6 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
     let mut last_worked: HashMap<String, DateTime<Utc>> = HashMap::new();
     // The result index of the contact each `last_worked` entry came from.
     let mut last_index: HashMap<String, usize> = HashMap::new();
-    let end = def.end(setup.start);
     let mut results = vec![QsoResult::default(); qsos.len()];
     let mut dupes = 0;
     let mut invalid_count = 0;
@@ -387,8 +386,7 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
             ReworkKind::Never => None,
             ReworkKind::Block => def.block_start(setup.start, block + 1),
             ReworkKind::Interval => Some(q.time + Duration::minutes(def.rework.minutes)),
-        }
-        .filter(|t| *t < end);
+        };
         *by_band.entry(q.band.clone()).or_default() += 1;
 
         let tally = &mut tallies[group_of(def, &q.band)];

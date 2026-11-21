@@ -145,8 +145,11 @@
   }
   .rework {
     margin-left: 10px;
-    color: var(--muted);
-    font-size: 0.82rem;
+    padding: 1px 7px;
+    border: 1px solid var(--warn);
+    border-radius: 10px;
+    color: var(--warn);
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
   .muted {

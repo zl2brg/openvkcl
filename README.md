@@ -46,6 +46,10 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 
 1. **New log** - pick the contest, start time, your callsign and exchange details.
    WIA contests that use an overlay offer Youth, Rookie and YL as well as none.
+   Contests with local-time scoring (Remembrance Day's 01:00-06:00 triple points)
+   also ask for your time zone during the contest; it defaults to this computer's
+   offset on the contest date, so change it if your PC clock is set to UTC or
+   you're operating away from home.
 2. Type a callsign. The status line shows DUPE, points and new multipliers as you type.
    Super Check Partial matches appear underneath (calls already in the log are
    highlighted; click one to use it), with the QRZ.com details when enabled.

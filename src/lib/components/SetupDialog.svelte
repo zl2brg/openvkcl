@@ -38,12 +38,48 @@
     setup.bonus_bands[b.category] = on ? [...bands, band] : bands;
   }
 
-  const offsets = Array.from({ length: 53 }, (_, i) => (i - 24) * 30);
+  /** The local-time points rule, if this contest has one (only RD at present). The offset is used for nothing else. */
+  let localTime = $derived(contest?.scoring.points.local_time ?? null);
+
+  /** Where each offset is used, for the VK/ZL region. Daylight-saving offsets are listed separately. */
+  const places: Record<number, string> = {
+    0: "UTC",
+    480: "WA (AWST)",
+    525: "Eucla",
+    570: "SA, NT (ACST)",
+    600: "QLD, NSW, VIC, TAS, ACT (AEST)",
+    630: "SA (ACDT), Lord Howe Is.",
+    660: "NSW, VIC, TAS, ACT (AEDT), Lord Howe Is. (summer)",
+    690: "Norfolk Is.",
+    720: "New Zealand (NZST), Norfolk Is. (summer)",
+    765: "Chatham Is.",
+    780: "New Zealand (NZDT)",
+    825: "Chatham Is. (summer)",
+  };
+  // Half-hour steps from UTC-12 to UTC+14, plus the region's 45-minute zones and the log's own value.
+  let offsets = $derived(
+    [
+      ...new Set([...Array.from({ length: 53 }, (_, i) => (i - 24) * 30), 525, 765, 825, setup.utc_offset_minutes]),
+    ].sort((a, b) => a - b),
+  );
   function offsetLabel(m: number) {
     const sign = m < 0 ? "-" : "+";
     const a = Math.abs(m);
-    return `UTC${sign}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+    const utc = `UTC${sign}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+    return places[m] ? `${utc} — ${places[m]}` : utc;
   }
+
+  /**
+   * For a new log, default to this computer's UTC offset at the contest start rather than today's, so a log set up
+   * in summer for a winter contest gets standard time. Stops once the operator picks an offset themselves.
+   */
+  let offsetChosen = false;
+  function defaultOffset() {
+    if (!isNew || offsetChosen) return;
+    const start = new Date(`${startDate}T${startTime}:00Z`);
+    if (!isNaN(start.getTime())) setup.utc_offset_minutes = -start.getTimezoneOffset();
+  }
+  defaultOffset();
 
   function contestChanged() {
     const c = contests.find((x) => x.id === setup.contest_id);
@@ -52,6 +88,7 @@
     setup.serial_per_band = c.serial_per_band;
     setup.categories = Object.fromEntries(c.categories.map((f) => [f.key, f.default]));
     setup.bonus_bands = {};
+    defaultOffset();
   }
 
   function save() {
@@ -101,21 +138,26 @@
       <div class="row">
         <label>
           Start date (UTC)
-          <input type="date" bind:value={startDate} />
+          <input type="date" bind:value={startDate} onchange={defaultOffset} />
         </label>
         <label>
           Start time (UTC)
-          <input type="time" bind:value={startTime} />
+          <input type="time" bind:value={startTime} onchange={defaultOffset} />
         </label>
       </div>
-      <label>
-        Your local time zone
-        <select bind:value={setup.utc_offset_minutes}>
-          {#each offsets as o (o)}
-            <option value={o}>{offsetLabel(o)}</option>
-          {/each}
-        </select>
-      </label>
+      {#if localTime}
+        <label>
+          Your local time zone during the contest
+          <select bind:value={setup.utc_offset_minutes} onchange={() => (offsetChosen = true)}>
+            {#each offsets as o (o)}
+              <option value={o}>{offsetLabel(o)}</option>
+            {/each}
+          </select>
+        </label>
+        <p class="hint">
+          Contacts from {localTime.from} to {localTime.to} your local time score ×{localTime.factor}.
+        </p>
+      {/if}
 
       <h3>Exchange</h3>
       <div class="row">

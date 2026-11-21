@@ -7,6 +7,7 @@
     highlight = "",
     now,
     onedit,
+    ondone,
   }: {
     rows: QsoRow[];
     contest: ContestDef;
@@ -15,6 +16,8 @@
     /** Rows with this call are highlighted. */
     highlight?: string;
     onedit: (row: QsoRow) => void;
+    /** Escape in an empty search box, to hand focus back. */
+    ondone?: () => void;
   } = $props();
 
   let hasNr = $derived(contest.exchange.includes("serial"));
@@ -22,6 +25,28 @@
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let hasRework = $derived(contest.rework.kind !== "never");
   let newestFirst = $derived(rows.map((r, i) => ({ r, n: i + 1 })).reverse());
+
+  let search = $state("");
+  let searchBox: HTMLInputElement;
+  let query = $derived(search.trim().toUpperCase());
+  // Numbered before filtering, so a match keeps its place in the log.
+  let matching = $derived(query ? newestFirst.filter(({ r }) => r.call.toUpperCase().includes(query)) : newestFirst);
+
+  function onWindowKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && !document.querySelector("[role=dialog]")) {
+      e.preventDefault();
+      searchBox.focus();
+      searchBox.select();
+    }
+  }
+
+  /** Escape clears the search, and a second Escape goes back to the entry line. */
+  function onSearchKeydown(e: KeyboardEvent) {
+    if (e.key !== "Escape") return;
+    e.preventDefault();
+    if (search) search = "";
+    else ondone?.();
+  }
 
   type SortValue = string | number | null;
   interface Column {
@@ -84,10 +109,10 @@
 
   let shown = $derived.by(() => {
     const col = sort && columns.find((c) => c.key === sort!.key);
-    if (!sort || !col) return newestFirst;
+    if (!sort || !col) return matching;
     const dir = sort.dir;
     // A stable sort, so equal values and rows with no value keep the newest-first order.
-    return [...newestFirst].sort((a, b) => {
+    return [...matching].sort((a, b) => {
       const va = col.value(a.r, a.n);
       const vb = col.value(b.r, b.n);
       if (va === null || vb === null) return (va === null ? 1 : 0) - (vb === null ? 1 : 0);
@@ -120,67 +145,119 @@
   }
 </script>
 
-<div class="wrap">
-  <table>
-    <thead>
-      <tr>
-        {#each columns as c (c.key)}
-          {@const dir = sort?.key === c.key ? sort.dir : 0}
-          <th class:num={c.num} aria-sort={dir === 1 ? "ascending" : dir === -1 ? "descending" : "none"}>
-            <button class="sort" onclick={() => toggleSort(c.key)} title={sortTitle(c)}>
-              {c.label}<span class="arrow">{dir === 1 ? "▲" : dir === -1 ? "▼" : "↕"}</span>
-            </button>
-          </th>
-        {/each}
-      </tr>
-    </thead>
-    <tbody>
-      {#each shown as { r, n } (r.id)}
-        {@const s = status(r)}
-        <tr
-          class:dim={r.dupe || !!r.invalid}
-          class:hl={highlight && r.call === highlight}
-          ondblclick={() => onedit(r)}
-          title="Double-click to edit"
-        >
-          <td class="num muted">{n}</td>
-          <td class="mono">{hhmm(r.time)}</td>
-          <td>{r.band}</td>
-          <td>{r.mode}</td>
-          <td class="mono call">{r.call}</td>
-          {#if hasRework}
-            <td>
-              {#if r.rework_at}
-                {@const left = countdownText(r.rework_at, now)}
-                {#if left}<span class="rework" title={reworkTitle(r)}>⏱ {left}</span>{/if}
+<svelte:window onkeydown={onWindowKeydown} />
+
+<div class="log">
+  <div class="search">
+    <input
+      bind:this={searchBox}
+      bind:value={search}
+      onkeydown={onSearchKeydown}
+      class="mono"
+      type="search"
+      placeholder="Search callsign"
+      aria-label="Search the log by callsign"
+      title="Find a callsign in the log (Ctrl+F / ⌘F). Esc clears."
+      spellcheck="false"
+      autocomplete="off"
+    />
+    {#if query}
+      <span class="count">{matching.length} of {rows.length}</span>
+    {/if}
+  </div>
+  <div class="wrap">
+    <table>
+      <thead>
+        <tr>
+          {#each columns as c (c.key)}
+            {@const dir = sort?.key === c.key ? sort.dir : 0}
+            <th class:num={c.num} aria-sort={dir === 1 ? "ascending" : dir === -1 ? "descending" : "none"}>
+              <button class="sort" onclick={() => toggleSort(c.key)} title={sortTitle(c)}>
+                {c.label}<span class="arrow">{dir === 1 ? "▲" : dir === -1 ? "▼" : "↕"}</span>
+              </button>
+            </th>
+          {/each}
+        </tr>
+      </thead>
+      <tbody>
+        {#each shown as { r, n } (r.id)}
+          {@const s = status(r)}
+          <tr
+            class:dim={r.dupe || !!r.invalid}
+            class:hl={highlight && r.call === highlight}
+            ondblclick={() => onedit(r)}
+            title="Double-click to edit"
+          >
+            <td class="num muted">{n}</td>
+            <td class="mono">{hhmm(r.time)}</td>
+            <td>{r.band}</td>
+            <td>{r.mode}</td>
+            <td class="mono call">{r.call}</td>
+            {#if hasRework}
+              <td>
+                {#if r.rework_at}
+                  {@const left = countdownText(r.rework_at, now)}
+                  {#if left}<span class="rework" title={reworkTitle(r)}>⏱ {left}</span>{/if}
+                {/if}
+              </td>
+            {/if}
+            <td class="mono">
+              {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasExch ? ` ${r.sent_exch}` : ""}{hasLoc
+                ? ` ${r.sent_locator}`
+                : ""}
+            </td>
+            <td class="mono">
+              {r.rcvd_rst}{hasNr ? ` ${r.rcvd_nr}` : ""}{hasExch ? ` ${r.rcvd_exch}` : ""}{hasLoc
+                ? ` ${r.rcvd_locator}`
+                : ""}
+            </td>
+            {#if hasLoc}<td class="num">{r.distance_km != null ? r.distance_km.toFixed(0) : ""}</td>{/if}
+            <td class="num">{points(r.points)}</td>
+            <td class={s.cls} title={s.title}>{s.text}</td>
+          </tr>
+        {:else}
+          <tr>
+            <td colspan={columns.length} class="empty">
+              {#if query && rows.length}
+                No contacts match “{query}”.
+              {:else}
+                No contacts yet. Type a callsign above and press Enter.
               {/if}
             </td>
-          {/if}
-          <td class="mono">
-            {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasExch ? ` ${r.sent_exch}` : ""}{hasLoc
-              ? ` ${r.sent_locator}`
-              : ""}
-          </td>
-          <td class="mono">
-            {r.rcvd_rst}{hasNr ? ` ${r.rcvd_nr}` : ""}{hasExch ? ` ${r.rcvd_exch}` : ""}{hasLoc
-              ? ` ${r.rcvd_locator}`
-              : ""}
-          </td>
-          {#if hasLoc}<td class="num">{r.distance_km != null ? r.distance_km.toFixed(0) : ""}</td>{/if}
-          <td class="num">{points(r.points)}</td>
-          <td class={s.cls} title={s.title}>{s.text}</td>
-        </tr>
-      {:else}
-        <tr><td colspan="11" class="empty">No contacts yet. Type a callsign above and press Enter.</td></tr>
-      {/each}
-    </tbody>
-  </table>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <style>
+  .log {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    height: 100%;
+  }
+  .search {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .search input {
+    width: 14em;
+    text-transform: uppercase;
+  }
+  .search input::placeholder {
+    text-transform: none;
+  }
+  .count {
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
   .wrap {
     overflow: auto;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--panel);

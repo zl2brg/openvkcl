@@ -349,6 +349,7 @@
             highlight={check?.previous[0]?.call ?? ""}
             {now}
             onedit={(r) => (editRow = r)}
+            ondone={refocus}
           />
         </div>
       </div>

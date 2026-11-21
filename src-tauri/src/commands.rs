@@ -5,7 +5,7 @@ use crate::export::{adif, cabrillo, scoresheet};
 use crate::model::{LogSetup, Qso, QsoInput};
 use crate::qrz::{Qrz, QrzConfig, QrzInfo};
 use crate::rig::hamlib::{self, RigModel, SerialPort};
-use crate::rig::{Rig, RigConfig, RigKind, RigStatus, tci};
+use crate::rig::{Rig, RigConfig, RigKind, RigStatus, flex, tci};
 use crate::scp::{self, Scp, ScpMatches};
 use crate::settings::Settings;
 use crate::store::Store;
@@ -350,13 +350,17 @@ pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<LogView> {
         let mut q = draft_qso(log, &input);
         q.id = log.store.insert(&q)?;
         let rig = state.settings.lock().unwrap().rig.clone();
-        if rig.kind == RigKind::Tci
-            && rig.spots
+        if rig.spots
             && let Some(khz) = q.freq_khz
         {
             let hz = (khz * 1000.0).round() as u64;
             let text = format!("worked {} {}", q.band, q.time.format("%H%MZ"));
-            state.rig.send(tci::spot(&q.call, tci::spot_mode(&q.mode, hz), hz, &text));
+            let mode = tci::spot_mode(&q.mode, hz);
+            match rig.kind {
+                RigKind::Tci => state.rig.send(tci::spot(&q.call, mode, hz, &text)),
+                RigKind::Flex => state.rig.send(flex::spot(&q.call, &mode.to_ascii_uppercase(), hz, &text)),
+                _ => {}
+            }
         }
         log.qsos.push(q);
         log.qsos.sort_by_key(|q| (q.time, q.id));
@@ -447,6 +451,12 @@ pub fn rig_status(state: State<AppState>) -> RigStatus {
 #[tauri::command]
 pub async fn rig_models(app: AppHandle) -> CmdResult<Vec<RigModel>> {
     hamlib::models(app.path().resource_dir().ok().as_deref()).await
+}
+
+/// FlexRadios announcing themselves on the local network.
+#[tauri::command]
+pub async fn flex_discover() -> CmdResult<Vec<flex::Found>> {
+    flex::discover(std::time::Duration::from_secs(3)).await
 }
 
 #[tauri::command]

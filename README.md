@@ -28,8 +28,8 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
   and a per-band CSV score sheet (distance, claimed points and running total
   for each contact).
 - Radio control for any radio Hamlib supports (just pick the model and serial
-  port), FLRig or TCI (cudaSDR, ExpertSDR, Thetis): band, mode and frequency
-  follow the radio.
+  port), FLRig, TCI (cudaSDR, ExpertSDR, Thetis) or a FlexRadio over the
+  network: band, mode and frequency follow the radio.
 - Super Check Partial: matching calls from MASTER.SCP and your log, plus N+1
   (one character different) suggestions, as you type. Download the latest
   MASTER.SCP from **Lookups…** or import your own file.
@@ -84,6 +84,11 @@ OpenVKCL talks to the radio through one of:
   port 50001), ExpertSDR (40001) or Thetis. Enable the TCI server in the SDR
   program. The SDR pushes frequency and mode changes as they happen, and each
   logged contact is marked on its band display (turn this off in **Radio…**).
+- **FlexRadio** 6000, 8000 and Aurora series, directly over the network with
+  the SmartSDR API (port 4992); no SmartSDR CAT or DAX needed, so it works on
+  macOS and Linux too. **Find radios** fills in the radio's address. OpenVKCL
+  follows the transmit slice (SmartSDR or another client must have a slice
+  open) and marks logged contacts as spots on the panadapter.
 
 Choose **Radio…** and connect. The connection is remembered and re-established
 when the app starts.

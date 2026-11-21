@@ -51,6 +51,7 @@ pub fn run() {
             commands::rig_disconnect,
             commands::rig_status,
             commands::rig_models,
+            commands::flex_discover,
             commands::serial_ports,
             commands::app_version,
             commands::scp_status,

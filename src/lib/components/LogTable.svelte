@@ -23,6 +23,31 @@
   let hasRework = $derived(contest.rework.kind !== "never");
   let newestFirst = $derived(rows.map((r, i) => ({ r, n: i + 1 })).reverse());
 
+  /** Sorting by the "Again in" column: soonest first, latest first, or the log's own order. */
+  let reworkSort = $state<"asc" | "desc" | null>(null);
+
+  function cycleReworkSort() {
+    reworkSort = reworkSort === null ? "asc" : reworkSort === "asc" ? "desc" : null;
+  }
+
+  /** When a running countdown ends, or null when there is none. */
+  function reworkMs(r: QsoRow): number | null {
+    const t = r.rework_at ? new Date(r.rework_at).getTime() : NaN;
+    return t > now.getTime() ? t : null;
+  }
+
+  let shown = $derived.by(() => {
+    if (!reworkSort || !hasRework) return newestFirst;
+    const dir = reworkSort === "asc" ? 1 : -1;
+    // Stable sort, so rows without a countdown keep the newest-first order at the bottom.
+    return [...newestFirst].sort((a, b) => {
+      const ta = reworkMs(a.r);
+      const tb = reworkMs(b.r);
+      if (ta === null || tb === null) return (ta === null ? 1 : 0) - (tb === null ? 1 : 0);
+      return (ta - tb) * dir;
+    });
+  });
+
   function status(r: QsoRow): { text: string; cls: string; title: string } {
     if (r.invalid) return { text: "INVALID", cls: "bad", title: r.invalid };
     if (r.dupe) return { text: "DUPE", cls: "bad", title: "Duplicate contact" };
@@ -50,7 +75,21 @@
         <th>Band</th>
         <th>Mode</th>
         <th>Call</th>
-        {#if hasRework}<th>Again in</th>{/if}
+        {#if hasRework}
+          <th aria-sort={reworkSort === "asc" ? "ascending" : reworkSort === "desc" ? "descending" : "none"}>
+            <button
+              class="sort"
+              onclick={cycleReworkSort}
+              title={reworkSort === "asc"
+                ? "Sorted soonest first. Click for latest first"
+                : reworkSort === "desc"
+                  ? "Sorted latest first. Click for log order"
+                  : "Sort by when each station can be worked again"}
+            >
+              Again in<span class="arrow">{reworkSort === "asc" ? "▲" : reworkSort === "desc" ? "▼" : "↕"}</span>
+            </button>
+          </th>
+        {/if}
         <th>Sent</th>
         <th>Rcvd</th>
         {#if hasLoc}<th class="num">km</th>{/if}
@@ -59,7 +98,7 @@
       </tr>
     </thead>
     <tbody>
-      {#each newestFirst as { r, n } (r.id)}
+      {#each shown as { r, n } (r.id)}
         {@const s = status(r)}
         <tr
           class:dim={r.dupe || !!r.invalid}
@@ -146,6 +185,28 @@
   }
   .call {
     font-weight: 600;
+  }
+  .sort {
+    all: unset;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-transform: inherit;
+    white-space: nowrap;
+  }
+  .sort:hover {
+    color: var(--fg);
+  }
+  .sort:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .arrow {
+    margin-left: 4px;
+    opacity: 0.8;
+  }
+  th[aria-sort="none"] .arrow {
+    opacity: 0.4;
   }
   .rework {
     display: inline-block;

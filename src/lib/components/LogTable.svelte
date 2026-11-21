@@ -1,14 +1,17 @@
 <script lang="ts">
-  import { hhmm, zoneLabel, type ContestDef, type QsoRow } from "$lib/api";
+  import { countdownText, hhmm, zoneLabel, type ContestDef, type QsoRow } from "$lib/api";
 
   let {
     rows,
     contest,
     highlight = "",
+    now,
     onedit,
   }: {
     rows: QsoRow[];
     contest: ContestDef;
+    /** Ticks every second to drive the re-work countdowns. */
+    now: Date;
     /** Rows with this call are highlighted. */
     highlight?: string;
     onedit: (row: QsoRow) => void;
@@ -25,6 +28,11 @@
     if (r.warning) return { text: "CHECK", cls: "warn", title: r.warning };
     if (r.new_mult) return { text: `MULT ${r.mult}`, cls: "mult", title: "New multiplier" };
     return { text: "", cls: "", title: "" };
+  }
+
+  function reworkTitle(r: QsoRow) {
+    const per = contest.rework.per.includes("band") ? ` on ${r.band} ${r.mode}` : "";
+    return `${r.call} can be worked again${per} at ${hhmm(r.rework_at!)}`;
   }
 
   function points(p: number) {
@@ -61,7 +69,13 @@
           <td class="mono">{hhmm(r.time)}</td>
           <td>{r.band}</td>
           <td>{r.mode}</td>
-          <td class="mono call">{r.call}</td>
+          <td class="mono">
+            <span class="call">{r.call}</span>
+            {#if r.rework_at}
+              {@const left = countdownText(r.rework_at, now)}
+              {#if left}<span class="rework" title={reworkTitle(r)}>⏱ {left}</span>{/if}
+            {/if}
+          </td>
           <td class="mono">
             {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasExch ? ` ${r.sent_exch}` : ""}{hasLoc
               ? ` ${r.sent_locator}`
@@ -128,6 +142,12 @@
   }
   .call {
     font-weight: 600;
+  }
+  .rework {
+    margin-left: 10px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-variant-numeric: tabular-nums;
   }
   .muted {
     color: var(--muted);

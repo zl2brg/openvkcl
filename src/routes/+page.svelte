@@ -347,6 +347,7 @@
             rows={view.qsos}
             contest={view.contest}
             highlight={check?.previous[0]?.call ?? ""}
+            {now}
             onedit={(r) => (editRow = r)}
           />
         </div>

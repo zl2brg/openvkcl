@@ -109,6 +109,7 @@ export interface QsoResult {
   block: number;
   distance_km: number | null;
   next_ok: string | null;
+  rework_at: string | null;
 }
 
 export type QsoRow = Qso & QsoResult;
@@ -328,6 +329,16 @@ export function untilText(iso: string, now: Date = new Date()): string {
   const m = mins % 60;
   if (m === 0) return h === 1 ? "in 1 hour" : `in ${h} hours`;
   return `in ${h} h ${m} min${m === 1 ? "" : "s"}`;
+}
+
+/** Time left until `iso` as "2:59:41" or "4:05", or null once it has passed. */
+export function countdownText(iso: string, now: Date = new Date()): string | null {
+  const secs = Math.ceil((new Date(iso).getTime() - now.getTime()) / 1000);
+  if (secs <= 0) return null;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
 }
 
 /** "13:05:09" in the display time zone. */

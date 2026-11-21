@@ -141,6 +141,16 @@ mod tests {
         assert_eq!(pts, vec![1.0, 0.0, 2.0, 0.0, 1.0, 4.0, 3.0, 0.0]);
         assert!(e.results[1].dupe && e.results[3].dupe);
         assert_eq!(e.results[1].next_ok, Some(m(5 + 180)));
+        // Only the latest counted contact per band and mode group has a countdown.
+        assert_eq!(e.results[0].rework_at, None); // superseded by #5
+        assert_eq!(e.results[1].rework_at, None); // dupe
+        assert_eq!(e.results[2].rework_at, Some(m(15 + 180)));
+        assert_eq!(e.results[4].rework_at, Some(m(200 + 180)));
+        assert_eq!(e.results[5].rework_at, Some(m(25 + 180)));
+        // 3 h after 12:00 is still inside the 24 h contest; 22:00 + 3 h isn't.
+        assert_eq!(e.results[6].rework_at, Some(m(12 * 60 + 180)));
+        let late = evaluate(&d, &s, &[qso(9, m(22 * 60), "VK5DEF", "80m", "PH")]);
+        assert_eq!(late.results[0].rework_at, None);
         assert!(e.results[7].invalid.is_some());
         assert_eq!(e.score.total, 11.0);
         assert_eq!(e.score.dupes, 2);
@@ -164,6 +174,10 @@ mod tests {
         assert!(e.results[3].dupe);
         assert_eq!(e.results[3].next_ok, Some(m(120)));
         assert!(!e.results[4].dupe && !e.results[5].dupe);
+        // Block contests count down to the start of the next block.
+        assert_eq!(e.results[0].rework_at, Some(m(120)));
+        assert_eq!(e.results[4].rework_at, Some(m(120)));
+        assert_eq!(e.results[5].rework_at, Some(m(240)));
         // Block 0: 4 QSOs x {VK2, ZL1} = 8. Block 1: 1 x {VK2} = 1.
         assert_eq!(e.score.total, 9.0);
     }

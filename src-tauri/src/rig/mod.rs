@@ -1,3 +1,4 @@
+pub mod flex;
 mod flrig;
 pub mod hamlib;
 mod rigctld;
@@ -24,6 +25,8 @@ pub enum RigKind {
     Flrig,
     /// ExpertSDR / cudaSDR Transceiver Control Interface.
     Tci,
+    /// FlexRadio 6000, 8000 and Aurora series over the SmartSDR API.
+    Flex,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,7 +36,7 @@ pub struct RigConfig {
     pub host: String,
     pub port: u16,
     pub poll_ms: u64,
-    /// TCI: mark logged contacts on the SDR's band display.
+    /// TCI and FlexRadio: mark logged contacts on the SDR's band display.
     pub spots: bool,
     /// Hamlib: rig model number, serial port and baud rate (0 for the radio's default).
     pub model: u32,
@@ -97,6 +100,7 @@ enum Client {
     Rigctld(rigctld::Client),
     Flrig(flrig::Client),
     Tci(Box<tci::Client>),
+    Flex(Box<flex::Client>),
 }
 
 impl Client {
@@ -117,6 +121,9 @@ impl Client {
             RigKind::Tci => tci::Client::connect(&cfg.host, cfg.port)
                 .await
                 .map(|c| Client::Tci(Box::new(c))),
+            RigKind::Flex => flex::Client::connect(&cfg.host, cfg.port)
+                .await
+                .map(|c| Client::Flex(Box::new(c))),
             RigKind::None => Err("No rig configured".into()),
         }
     }
@@ -137,13 +144,15 @@ impl Client {
                 c.poll().await
             }
             Client::Tci(c) => c.poll(interval).await,
+            Client::Flex(c) => c.poll(interval).await,
         }
     }
 
-    /// Send a raw command to the radio's control server; only TCI accepts any.
+    /// Send a raw command to the radio's control server; only TCI and FlexRadio accept any.
     async fn send(&mut self, text: &str) -> Result<(), String> {
         match self {
             Client::Tci(c) => c.send(text).await,
+            Client::Flex(c) => c.send(text).await,
             _ => Ok(()),
         }
     }
@@ -153,7 +162,7 @@ impl Client {
 pub struct Rig {
     task: Mutex<Option<JoinHandle<()>>>,
     status: Arc<Mutex<RigStatus>>,
-    /// Commands queued for the radio's control server (TCI spots).
+    /// Commands queued for the radio's control server (TCI and FlexRadio spots).
     outbox: Mutex<Option<mpsc::UnboundedSender<String>>>,
     /// The rigctld started for the current connection, if any.
     rigctld: Mutex<hamlib::Process>,
@@ -270,6 +279,8 @@ mod tests {
         assert_eq!(contest_mode("PKTUSB"), Some("DG"));
         assert_eq!(contest_mode("USB-D"), Some("DG"));
         assert_eq!(contest_mode("D-STAR"), Some("PH"));
+        assert_eq!(contest_mode("DIGU"), Some("DG"));
+        assert_eq!(contest_mode("FDV"), Some("PH"));
         assert_eq!(contest_mode("???"), None);
     }
 }

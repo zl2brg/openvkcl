@@ -20,6 +20,7 @@
   let hasNr = $derived(contest.exchange.includes("serial"));
   let hasExch = $derived(contest.exchange.includes("number"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
+  let hasRework = $derived(contest.rework.kind !== "never");
   let newestFirst = $derived(rows.map((r, i) => ({ r, n: i + 1 })).reverse());
 
   function status(r: QsoRow): { text: string; cls: string; title: string } {
@@ -49,6 +50,7 @@
         <th>Band</th>
         <th>Mode</th>
         <th>Call</th>
+        {#if hasRework}<th>Again in</th>{/if}
         <th>Sent</th>
         <th>Rcvd</th>
         {#if hasLoc}<th class="num">km</th>{/if}
@@ -69,13 +71,15 @@
           <td class="mono">{hhmm(r.time)}</td>
           <td>{r.band}</td>
           <td>{r.mode}</td>
-          <td class="mono">
-            <span class="call">{r.call}</span>
-            {#if r.rework_at}
-              {@const left = countdownText(r.rework_at, now)}
-              {#if left}<span class="rework" title={reworkTitle(r)}>⏱ {left}</span>{/if}
-            {/if}
-          </td>
+          <td class="mono call">{r.call}</td>
+          {#if hasRework}
+            <td>
+              {#if r.rework_at}
+                {@const left = countdownText(r.rework_at, now)}
+                {#if left}<span class="rework" title={reworkTitle(r)}>⏱ {left}</span>{/if}
+              {/if}
+            </td>
+          {/if}
           <td class="mono">
             {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasExch ? ` ${r.sent_exch}` : ""}{hasLoc
               ? ` ${r.sent_locator}`
@@ -91,7 +95,7 @@
           <td class={s.cls} title={s.title}>{s.text}</td>
         </tr>
       {:else}
-        <tr><td colspan="10" class="empty">No contacts yet. Type a callsign above and press Enter.</td></tr>
+        <tr><td colspan="11" class="empty">No contacts yet. Type a callsign above and press Enter.</td></tr>
       {/each}
     </tbody>
   </table>
@@ -144,7 +148,9 @@
     font-weight: 600;
   }
   .rework {
-    margin-left: 10px;
+    display: inline-block;
+    min-width: 6.5em;
+    text-align: center;
     padding: 1px 7px;
     border: 1px solid var(--warn);
     border-radius: 10px;

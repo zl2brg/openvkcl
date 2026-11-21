@@ -23,11 +23,13 @@
   let hasRework = $derived(contest.rework.kind !== "never");
   let newestFirst = $derived(rows.map((r, i) => ({ r, n: i + 1 })).reverse());
 
-  /** Sorting by the "Again in" column: soonest first, latest first, or the log's own order. */
-  let reworkSort = $state<"asc" | "desc" | null>(null);
-
-  function cycleReworkSort() {
-    reworkSort = reworkSort === null ? "asc" : reworkSort === "asc" ? "desc" : null;
+  type SortValue = string | number | null;
+  interface Column {
+    key: string;
+    label: string;
+    num?: boolean;
+    /** What the column sorts by; null (no value) always sorts last. */
+    value: (r: QsoRow, n: number) => SortValue;
   }
 
   /** When a running countdown ends, or null when there is none. */
@@ -36,17 +38,69 @@
     return t > now.getTime() ? t : null;
   }
 
+  const text = (s: string) => s.trim() || null;
+  const exchange = (rst: string, nr: string, exch: string, loc: string) =>
+    text([rst, hasNr ? nr : "", hasExch ? exch : "", hasLoc ? loc : ""].join(" "));
+
+  function bandIndex(band: string): SortValue {
+    const i = contest.bands.indexOf(band);
+    return i < 0 ? text(band) : i;
+  }
+
+  let columns = $derived<Column[]>([
+    { key: "n", label: "#", num: true, value: (_, n) => n },
+    { key: "time", label: zoneLabel() === "UTC" ? "UTC" : "Local", value: (r) => new Date(r.time).getTime() },
+    // In the contest's band order (160m before 80m), not alphabetical.
+    { key: "band", label: "Band", value: (r) => bandIndex(r.band) },
+    { key: "mode", label: "Mode", value: (r) => text(r.mode) },
+    { key: "call", label: "Call", value: (r) => text(r.call) },
+    ...(hasRework ? [{ key: "rework", label: "Again in", value: reworkMs }] : []),
+    { key: "sent", label: "Sent", value: (r) => exchange(r.sent_rst, r.sent_nr, r.sent_exch, r.sent_locator) },
+    { key: "rcvd", label: "Rcvd", value: (r) => exchange(r.rcvd_rst, r.rcvd_nr, r.rcvd_exch, r.rcvd_locator) },
+    ...(hasLoc ? [{ key: "km", label: "km", num: true, value: (r: QsoRow) => r.distance_km }] : []),
+    { key: "pts", label: "Pts", num: true, value: (r) => r.points },
+    { key: "status", label: "Status", value: (r) => text(status(r).text) },
+  ]);
+
+  /** The sorted column and direction; null keeps the log's newest-first order. */
+  let sort = $state<{ key: string; dir: 1 | -1 } | null>(null);
+
+  /** Each click on a header goes ascending, descending, then back to log order. */
+  function toggleSort(key: string) {
+    if (sort?.key !== key) sort = { key, dir: 1 };
+    else if (sort.dir === 1) sort = { key, dir: -1 };
+    else sort = null;
+  }
+
+  // Numbers inside text compare as numbers, so "59 9" sorts before "59 10".
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+  function compare(a: SortValue, b: SortValue): number {
+    if (typeof a === "number" && typeof b === "number") return a - b;
+    if (typeof a === "number") return -1;
+    if (typeof b === "number") return 1;
+    return collator.compare(a ?? "", b ?? "");
+  }
+
   let shown = $derived.by(() => {
-    if (!reworkSort || !hasRework) return newestFirst;
-    const dir = reworkSort === "asc" ? 1 : -1;
-    // Stable sort, so rows without a countdown keep the newest-first order at the bottom.
+    const col = sort && columns.find((c) => c.key === sort!.key);
+    if (!sort || !col) return newestFirst;
+    const dir = sort.dir;
+    // A stable sort, so equal values and rows with no value keep the newest-first order.
     return [...newestFirst].sort((a, b) => {
-      const ta = reworkMs(a.r);
-      const tb = reworkMs(b.r);
-      if (ta === null || tb === null) return (ta === null ? 1 : 0) - (tb === null ? 1 : 0);
-      return (ta - tb) * dir;
+      const va = col.value(a.r, a.n);
+      const vb = col.value(b.r, b.n);
+      if (va === null || vb === null) return (va === null ? 1 : 0) - (vb === null ? 1 : 0);
+      return compare(va, vb) * dir;
     });
   });
+
+  function sortTitle(c: Column) {
+    if (sort?.key !== c.key) return `Sort by ${c.label}`;
+    return sort.dir === 1
+      ? `Sorted by ${c.label}, ascending. Click for descending`
+      : `Sorted by ${c.label}, descending. Click for log order`;
+  }
 
   function status(r: QsoRow): { text: string; cls: string; title: string } {
     if (r.invalid) return { text: "INVALID", cls: "bad", title: r.invalid };
@@ -70,31 +124,14 @@
   <table>
     <thead>
       <tr>
-        <th class="num">#</th>
-        <th>{zoneLabel() === "UTC" ? "UTC" : "Local"}</th>
-        <th>Band</th>
-        <th>Mode</th>
-        <th>Call</th>
-        {#if hasRework}
-          <th aria-sort={reworkSort === "asc" ? "ascending" : reworkSort === "desc" ? "descending" : "none"}>
-            <button
-              class="sort"
-              onclick={cycleReworkSort}
-              title={reworkSort === "asc"
-                ? "Sorted soonest first. Click for latest first"
-                : reworkSort === "desc"
-                  ? "Sorted latest first. Click for log order"
-                  : "Sort by when each station can be worked again"}
-            >
-              Again in<span class="arrow">{reworkSort === "asc" ? "▲" : reworkSort === "desc" ? "▼" : "↕"}</span>
+        {#each columns as c (c.key)}
+          {@const dir = sort?.key === c.key ? sort.dir : 0}
+          <th class:num={c.num} aria-sort={dir === 1 ? "ascending" : dir === -1 ? "descending" : "none"}>
+            <button class="sort" onclick={() => toggleSort(c.key)} title={sortTitle(c)}>
+              {c.label}<span class="arrow">{dir === 1 ? "▲" : dir === -1 ? "▼" : "↕"}</span>
             </button>
           </th>
-        {/if}
-        <th>Sent</th>
-        <th>Rcvd</th>
-        {#if hasLoc}<th class="num">km</th>{/if}
-        <th class="num">Pts</th>
-        <th></th>
+        {/each}
       </tr>
     </thead>
     <tbody>
@@ -194,7 +231,8 @@
     text-transform: inherit;
     white-space: nowrap;
   }
-  .sort:hover {
+  .sort:hover,
+  th:not([aria-sort="none"]) .sort {
     color: var(--fg);
   }
   .sort:focus-visible {

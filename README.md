@@ -37,7 +37,8 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
   MASTER.SCP from **Lookups…** or import your own file.
 - QRZ.com lookups: name, location and grid for each callsign (needs a QRZ.com
   XML subscription for more than name and country).
-- Dark appearance by default, with an optional light theme in **About**.
+- Dark appearance by default, with a light theme one click away (the sun/moon
+  icon at the top right).
 - Each log is a single SQLite file (`.ovkcl`); every contact is written to disk
   as soon as it's logged.
 
@@ -51,7 +52,8 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 3. **Space** moves to the next exchange field, **Enter** logs, **Esc** clears.
    Without a radio connected, **Alt+Up/Down** changes band and **Alt+Left/Right** changes mode.
 4. Double-click a contact in the log to edit or delete it. Click the clock to
-   show times in UTC or local time; the log and exports always use UTC.
+   show times in UTC or local time; the log and exports always use UTC. The
+   sun/moon icon next to it switches between dark and light appearance.
 5. **Cabrillo…** previews the log and saves it for upload to
    [vklogchecker.com](https://www.vklogchecker.com).
 6. **Score sheet** writes per-band log sheets (CSV) with the period, points,
@@ -61,8 +63,7 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
    and signed declaration to vhfcontest@nzart.org.nz within two weeks. To claim
    the multipliers, tick the bands you ran QRP on and set *Station* to PORTABLE
    (field station) in the setup.
-7. **About** shows the version, licence and author details, and lets you switch
-   between dark and light appearance.
+7. **About** shows the version, licence and author details.
 
 In contests that exchange an NZART branch number, the branch box fills in from
 your last contact with that station, so you only type it once.

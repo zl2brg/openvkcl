@@ -1,7 +1,6 @@
 <script lang="ts">
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Modal from "./Modal.svelte";
-  import { setTheme, theme, type Theme } from "$lib/theme.svelte";
 
   let { version, onclose }: { version: string; onclose: () => void } = $props();
 
@@ -15,16 +14,6 @@
     <h3>OpenVKCL</h3>
     <p class="muted">Version {version}</p>
     <p>A contest logger for Australian and New Zealand contests.</p>
-    <label class="theme">
-      Appearance
-      <select
-        value={theme.mode}
-        onchange={(e) => setTheme((e.currentTarget as HTMLSelectElement).value as Theme)}
-      >
-        <option value="dark">Dark</option>
-        <option value="light">Light</option>
-      </select>
-    </label>
     <dl>
       <dt>Author</dt>
       <dd>Simon, ZL2BRG</dd>
@@ -59,14 +48,6 @@
   }
   p {
     margin: 0;
-  }
-  .theme {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    font-size: 0.85rem;
-    margin: 8px 0 0;
-    max-width: 12rem;
   }
   dl {
     display: grid;

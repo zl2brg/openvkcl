@@ -22,7 +22,9 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
   band designators.
 - Live dupe checking with each contest's re-work rules (time intervals, time
   blocks, new grid square), points, multipliers and running score. When a
-  station is a dupe, the wait is shown as “in 60 mins” (and counts down).
+  station is a dupe, the wait is shown as “in 60 mins” (and counts down), and
+  each contact in the log shows a ⏱ countdown beside the call until that
+  station can be worked again on that band and mode.
 - Distance scoring from 6, 8 or 10-character Maidenhead locators.
 - Cabrillo 3.0 export with the contest names vklogchecker.com expects, plus ADIF
   and a per-band CSV score sheet (distance, claimed points and running total

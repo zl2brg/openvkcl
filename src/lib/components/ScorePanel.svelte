@@ -157,7 +157,6 @@
             {/each}
           </tbody>
         </table>
-        <p class="muted">Confirmed: QSL card or LoTW.</p>
       </section>
     {/if}
   {:else}

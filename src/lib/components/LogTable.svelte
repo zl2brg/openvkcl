@@ -107,20 +107,6 @@
     return i < 0 ? text(band) : i;
   }
 
-  /** Confirmations as letters: L for LoTW, Q for a QSL card, E for eQSL. */
-  function qslText(r: QsoRow): string {
-    return [r.lotw_rcvd === "Y" ? "L" : "", r.qsl_rcvd === "Y" ? "Q" : "", r.eqsl_rcvd === "Y" ? "E" : ""]
-      .filter(Boolean)
-      .join(" ");
-  }
-
-  function qslTitle(r: QsoRow): string {
-    const got = [r.lotw_rcvd === "Y" && "LoTW", r.qsl_rcvd === "Y" && "QSL card", r.eqsl_rcvd === "Y" && "eQSL"].filter(
-      Boolean,
-    );
-    return got.length ? `Confirmed by ${got.join(", ")}` : "Not confirmed";
-  }
-
   function countryTitle(r: QsoRow): string {
     if (!r.country) return "";
     const zones = [r.cont, r.cqz ? `CQ ${r.cqz}` : "", r.ituz ? `ITU ${r.ituz}` : ""].filter(Boolean).join(" · ");
@@ -139,7 +125,6 @@
     { key: "sent", label: "Sent", value: (r) => text(r.sent_rst) },
     { key: "rcvd", label: "Rcvd", value: (r) => text(r.rcvd_rst) },
     { key: "name", label: "Name", value: (r) => text(r.name) },
-    { key: "qsl", label: "QSL", value: (r) => text(qslText(r)) },
     { key: "comment", label: "Comment", value: (r) => text(r.comment) },
   ]);
 
@@ -286,7 +271,6 @@
               <td class="mono">{r.sent_rst}</td>
               <td class="mono">{r.rcvd_rst}</td>
               <td class="clip" title={r.name}>{r.name}</td>
-              <td class="mono" class:ok={qslText(r) !== ""} title={qslTitle(r)}>{qslText(r)}</td>
               <td class="clip muted" title={r.comment}>{r.comment}</td>
             {:else}
               <td class="mono">{hhmm(r.time)}</td>
@@ -390,9 +374,6 @@
     max-width: 16em;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .ok {
-    color: var(--ok);
   }
   .more {
     text-align: center;

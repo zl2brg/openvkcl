@@ -321,6 +321,9 @@ fn mult_key(def: &ContestDef, q: &Qso, value: &str, block: i64) -> Option<String
 }
 
 pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation {
+    if def.general {
+        return evaluate_general(qsos);
+    }
     let mut order: Vec<usize> = (0..qsos.len()).collect();
     order.sort_by_key(|&i| (qsos[i].time, qsos[i].id));
 
@@ -442,6 +445,29 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
         });
     }
     Evaluation { results, score }
+}
+
+/// A general log: every contact counts, with no dupes, points or contest rules.
+fn evaluate_general(qsos: &[Qso]) -> Evaluation {
+    let mut by_band: BTreeMap<String, u32> = BTreeMap::new();
+    let results = qsos
+        .iter()
+        .map(|q| {
+            *by_band.entry(q.band.clone()).or_default() += 1;
+            QsoResult {
+                prefix: callsign::wpx_prefix(&q.call),
+                ..Default::default()
+            }
+        })
+        .collect();
+    Evaluation {
+        results,
+        score: Score {
+            qsos: qsos.len() as u32,
+            by_band: by_band.into_iter().collect(),
+            ..Default::default()
+        },
+    }
 }
 
 /// Evaluate a contact that hasn't been logged yet, as if it were logged now.

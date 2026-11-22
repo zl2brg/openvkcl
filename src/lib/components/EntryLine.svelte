@@ -1,15 +1,20 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
+  import BandGrid from "./BandGrid.svelte";
   import {
     api,
+    defaultRst as rstFor,
     errorText,
     dateTimeText,
+    generalMode,
+    modeClass,
     parseDateTimeText,
     untilText,
     zoneLabel,
     type CheckResult,
     type ContestDef,
+    type Need,
     type LogSetup,
     type QrzInfo,
     type QsoInput,
@@ -47,6 +52,8 @@
   let rcvdNr = $state("");
   let rcvdExch = $state("");
   let rcvdLoc = $state("");
+  let name = $state("");
+  let comment = $state("");
   let band = $state("");
   let mode = $state("");
   let freqKhz = $state<number | null>(null);
@@ -61,11 +68,15 @@
   let exchInput: HTMLInputElement | undefined = $state();
   let locInput: HTMLInputElement | undefined = $state();
   let rstInput: HTMLInputElement | undefined = $state();
+  let rstSentInput: HTMLInputElement | undefined = $state();
+  let nameInput: HTMLInputElement | undefined = $state();
+  let commentInput: HTMLInputElement | undefined = $state();
 
   let hasNr = $derived(contest.exchange.includes("serial"));
   let hasExch = $derived(contest.exchange.includes("number"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
-  let defaultRst = $derived(mode === "PH" ? "59" : "599");
+  let general = $derived(contest.general);
+  let defaultRst = $derived(rstFor(mode));
   let rigDriven = $derived(followRig && rig.connected);
 
   $effect(() => {
@@ -76,7 +87,10 @@
   $effect(() => {
     if (!rigDriven) return;
     if (rig.band && contest.bands.includes(rig.band)) band = rig.band;
-    if (rig.mode && contest.modes.includes(rig.mode)) mode = rig.mode;
+    if (general) {
+      const m = rig.rig_mode ? generalMode(rig.rig_mode, untrack(() => mode)) : null;
+      if (m && contest.modes.includes(m)) mode = m;
+    } else if (rig.mode && contest.modes.includes(rig.mode)) mode = rig.mode;
     freqKhz = rig.freq_hz != null ? rig.freq_hz / 1000 : null;
   });
 
@@ -93,6 +107,9 @@
       rcvd_nr: rcvdNr.trim(),
       rcvd_exch: rcvdExch.trim() || (useKnown ? check?.known_exch : "") || "",
       rcvd_locator: rcvdLoc.trim() || (useKnown ? check?.known_locator : "") || "",
+      name: name.trim() || (useKnown ? knownName : "") || "",
+      qth: "",
+      comment: comment.trim(),
     };
   }
 
@@ -114,6 +131,8 @@
   let qrzError = $state("");
 
   let callKey = $derived(call.trim().toUpperCase());
+  /** The name the log or QRZ.com already has for this station, used when left blank. */
+  let knownName = $derived(check?.known_name ?? qrz?.name ?? "");
   let plausible = $derived(/^[A-Z0-9/]{3,}$/.test(callKey) && /\d/.test(callKey) && /[A-Z]/.test(callKey));
 
   $effect(() => {
@@ -175,6 +194,8 @@
     rcvdNr = "";
     rcvdExch = "";
     rcvdLoc = "";
+    name = "";
+    comment = "";
     error = "";
     untrack(() => callInput?.focus());
   }
@@ -197,6 +218,11 @@
   }
 
   function fieldOrder(): HTMLInputElement[] {
+    if (general) {
+      return [callInput, rstInput, rstSentInput, nameInput, commentInput].filter(
+        (x): x is HTMLInputElement => !!x,
+      );
+    }
     return [
       callInput,
       hasNr ? nrInput : undefined,
@@ -220,7 +246,12 @@
     } else if (e.key === "Escape") {
       e.preventDefault();
       clear();
-    } else if (e.key === " " && fieldOrder().includes(e.target as HTMLInputElement)) {
+    } else if (
+      e.key === " " &&
+      fieldOrder().includes(e.target as HTMLInputElement) &&
+      // Names, places and comments have spaces in them.
+      !(e.target as HTMLInputElement).dataset.text
+    ) {
       e.preventDefault();
       const next = step(fieldOrder(), e.target as HTMLInputElement, 1);
       next.focus();
@@ -232,6 +263,21 @@
       e.preventDefault();
       mode = step(contest.modes, mode, e.key === "ArrowRight" ? 1 : -1);
     }
+  }
+
+  const CLASS_NAME = { PH: "phone", CW: "CW", DG: "data" };
+
+  function needClass(n: Need) {
+    return n === "confirmed" ? "ok" : "warn";
+  }
+
+  /** E.g. "Confirmed · 20m worked, not confirmed". */
+  function needText(dx: NonNullable<CheckResult["dx"]>): string {
+    const word = (n: Need) => (n === "confirmed" ? "confirmed" : "worked, not confirmed");
+    const parts = [`Country ${word(dx.any)}`];
+    if (dx.band !== "new" && dx.band !== dx.any) parts.push(`${band} ${word(dx.band)}`);
+    if (dx.mode !== "new" && dx.mode !== dx.any) parts.push(`${CLASS_NAME[modeClass(mode)]} ${word(dx.mode)}`);
+    return parts.join(" · ");
   }
 
   let sentText = $derived(
@@ -275,6 +321,18 @@
     {#if manualTime}
       <input class="mono time" bind:value={timeText} title="QSO time, {zoneLabel()} (YYYY-MM-DD HH:MM)" />
     {/if}
+    {#if general}
+      <div class="bandgrid">
+        <BandGrid
+          bands={contest.bands}
+          {band}
+          {mode}
+          call={callKey}
+          previous={callKey ? (check?.previous ?? []) : []}
+          dx={callKey ? (check?.dx ?? null) : null}
+        />
+      </div>
+    {/if}
   </div>
 
   <div class="fields">
@@ -289,16 +347,18 @@
         spellcheck="false"
       />
     </label>
-    <label class="sent">
-      Sent
-      <input
-        class="mono"
-        value={sentText}
-        readonly
-        tabindex="-1"
-        style:width="{Math.max(8, sentText.length + 2)}ch"
-      />
-    </label>
+    {#if !general}
+      <label class="sent">
+        Sent
+        <input
+          class="mono"
+          value={sentText}
+          readonly
+          tabindex="-1"
+          style:width="{Math.max(8, sentText.length + 2)}ch"
+        />
+      </label>
+    {/if}
     {#if hasNr}
       <label class="nr">
         Nr rcvd
@@ -338,14 +398,43 @@
     </label>
     <label class="rst">
       RST sent
-      <input class="mono" bind:value={sentRst} placeholder={defaultRst} autocomplete="off" />
+      <input class="mono" bind:this={rstSentInput} bind:value={sentRst} placeholder={defaultRst} autocomplete="off" />
     </label>
+    {#if general}
+      <label class="text">
+        Name
+        <input bind:this={nameInput} bind:value={name} placeholder={knownName} data-text="1" autocomplete="off" />
+      </label>
+      <label class="text comment">
+        Comment
+        <input bind:this={commentInput} bind:value={comment} data-text="1" autocomplete="off" />
+      </label>
+    {/if}
     <button class="primary log" onclick={submit} disabled={busy || !call.trim()}>Log ⏎</button>
   </div>
 
   <div class="status">
     {#if error}
       <span class="bad">{error}</span>
+    {:else if general && call.trim() && check}
+      {@const dx = check.dx}
+      {#if dx}
+        {@const c = dx.country}
+        <span class="country">{c.country}</span>
+        <span class="muted">{[c.cont, c.cqz ? `CQ ${c.cqz}` : "", c.ituz ? `ITU ${c.ituz}` : ""].filter(Boolean).join(" · ")}</span>
+        {#if dx.any === "new"}
+          <span class="mult strong">NEW COUNTRY</span>
+        {:else}
+          {#if dx.band === "new"}<span class="mult strong">NEW BAND</span>{/if}
+          {#if dx.mode === "new"}<span class="mult strong">NEW MODE</span>{/if}
+          <span class={needClass(dx.any)}>{needText(dx)}</span>
+        {/if}
+      {:else if plausible}
+        <span class="muted">Country not known: download the country file in Lookups…</span>
+      {/if}
+      {#if check.previous.length}
+        <span class="muted">· worked {check.previous.length}× before</span>
+      {/if}
     {:else if call.trim() && check}
       {@const r = check.result}
       {#if r.invalid}
@@ -365,7 +454,10 @@
         {#if r.warning}<span class="warn">{r.warning}</span>{/if}
       {/if}
     {:else}
-      <span class="muted">Space moves between fields · Enter logs · Esc clears · Alt+arrows change band/mode</span>
+      <span class="muted"
+        >Space moves between {general ? "call and report " : ""}fields · Enter logs · Esc clears · Alt+arrows change
+        band/mode</span
+      >
     {/if}
   </div>
 
@@ -425,6 +517,7 @@
   }
   .fields {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     align-items: end;
   }
@@ -461,6 +554,22 @@
   }
   .rst input {
     width: 4.5ch;
+  }
+  .text input {
+    width: 10ch;
+  }
+  .comment {
+    flex: 1;
+    min-width: 10ch;
+  }
+  .comment input {
+    width: 100%;
+  }
+  .country {
+    font-weight: 700;
+  }
+  .bandgrid {
+    margin-left: auto;
   }
   .time {
     width: 19ch;

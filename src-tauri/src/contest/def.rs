@@ -7,6 +7,9 @@ use std::collections::BTreeMap;
 pub struct ContestDef {
     pub id: String,
     pub name: String,
+    /// A general log for everyday and DX operating: no contest period, scoring or dupes.
+    #[serde(default)]
+    pub general: bool,
     pub cabrillo_name: String,
     #[serde(default)]
     pub rules_url: String,

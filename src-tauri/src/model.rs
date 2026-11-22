@@ -65,6 +65,28 @@ pub struct Qso {
     pub sent_exch: String,
     #[serde(default)]
     pub rcvd_exch: String,
+    #[serde(flatten, default)]
+    pub details: QsoDetails,
+}
+
+/// General logging fields: who the station was, the country and QSL status.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct QsoDetails {
+    pub name: String,
+    pub qth: String,
+    pub comment: String,
+    /// ADIF DXCC entity number, from an import or the country file when logged.
+    pub dxcc: Option<u32>,
+    /// ADIF QSL status values: Y (yes), N (no), R (requested), Q (queued), I (ignore).
+    pub qsl_sent: String,
+    pub qsl_rcvd: String,
+    pub lotw_sent: String,
+    pub lotw_rcvd: String,
+    pub eqsl_sent: String,
+    pub eqsl_rcvd: String,
+    /// Other ADIF fields from an import, written back out on export.
+    pub adif: BTreeMap<String, String>,
 }
 
 /// A contact as entered on the entry line; the sent exchange is filled in by the backend.
@@ -81,4 +103,7 @@ pub struct QsoInput {
     pub rcvd_nr: String,
     pub rcvd_exch: String,
     pub rcvd_locator: String,
+    pub name: String,
+    pub qth: String,
+    pub comment: String,
 }

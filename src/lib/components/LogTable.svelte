@@ -90,7 +90,7 @@
     num?: boolean;
     /** Fixed width, in general logs; columns without one share what's left. */
     width?: string;
-    /** Hidden in narrow windows. */
+    /** Left out in narrow windows. */
     optional?: boolean;
     /** What the column sorts by; null (no value) always sorts last. */
     value: (r: QsoRow, n: number) => SortValue;
@@ -119,14 +119,14 @@
 
   let timeLabel = $derived(zoneLabel() === "UTC" ? "UTC" : "Local");
   let generalColumns = $derived<Column[]>([
-    { key: "n", label: "#", num: true, width: "3.5rem", value: (_, n) => n },
-    { key: "time", label: timeLabel, width: "9rem", value: (r) => new Date(r.time).getTime() },
-    { key: "band", label: "Band", width: "4.2rem", value: (r) => bandIndex(r.band) },
-    { key: "mode", label: "Mode", width: "4.4rem", value: (r) => text(r.mode) },
-    { key: "call", label: "Call", width: "6.5rem", value: (r) => text(r.call) },
+    { key: "n", label: "#", num: true, width: "4.2rem", value: (_, n) => n },
+    { key: "time", label: timeLabel, width: "10rem", value: (r) => new Date(r.time).getTime() },
+    { key: "band", label: "Band", width: "4.4rem", value: (r) => bandIndex(r.band) },
+    { key: "mode", label: "Mode", width: "4.6rem", value: (r) => text(r.mode) },
+    { key: "call", label: "Call", width: "7rem", value: (r) => text(r.call) },
     { key: "country", label: "Country", value: (r) => text(r.country ?? "") },
-    { key: "sent", label: "Sent", width: "4.2rem", value: (r) => text(r.sent_rst) },
-    { key: "rcvd", label: "Rcvd", width: "4.2rem", value: (r) => text(r.rcvd_rst) },
+    { key: "sent", label: "Sent", width: "4.4rem", value: (r) => text(r.sent_rst) },
+    { key: "rcvd", label: "Rcvd", width: "4.4rem", value: (r) => text(r.rcvd_rst) },
     { key: "name", label: "Name", value: (r) => text(r.name) },
     { key: "comment", label: "Comment", optional: true, value: (r) => text(r.comment) },
   ]);
@@ -145,7 +145,13 @@
     { key: "pts", label: "Pts", num: true, value: (r) => r.points },
     { key: "status", label: "Status", value: (r) => text(status(r).text) },
   ]);
-  let columns = $derived(general ? generalColumns : contestColumns);
+  // Below this window width the Comment column is left out, so Country and Name keep room.
+  const WIDE = 1250;
+  let windowWidth = $state(WIDE);
+  let showComment = $derived(windowWidth >= WIDE);
+  let columns = $derived(
+    general ? generalColumns.filter((c) => !c.optional || showComment) : contestColumns,
+  );
 
   /** The sorted column and direction; null keeps the log's newest-first order. */
   let sort = $state<{ key: string; dir: 1 | -1 } | null>(null);
@@ -205,7 +211,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window onkeydown={onWindowKeydown} bind:innerWidth={windowWidth} />
 
 <div class="log">
   <div class="search">
@@ -240,11 +246,16 @@
   </div>
   <div class="wrap">
     <table class:fit={general}>
+      {#if general}
+        <colgroup>
+          {#each columns as c (c.key)}<col style:width={c.width} />{/each}
+        </colgroup>
+      {/if}
       <thead>
         <tr>
           {#each columns as c (c.key)}
             {@const dir = sort?.key === c.key ? sort.dir : 0}
-            <th class:num={c.num} class:optional={c.optional} style:width={c.width} aria-sort={dir === 1 ? "ascending" : dir === -1 ? "descending" : "none"}>
+            <th class:num={c.num} aria-sort={dir === 1 ? "ascending" : dir === -1 ? "descending" : "none"}>
               <button class="sort" onclick={() => toggleSort(c.key)} title={sortTitle(c)}>
                 {c.label}<span class="arrow">{dir === 1 ? "▲" : dir === -1 ? "▼" : "↕"}</span>
               </button>
@@ -273,7 +284,7 @@
               <td class="mono">{r.sent_rst}</td>
               <td class="mono">{r.rcvd_rst}</td>
               <td title={r.name}>{r.name}</td>
-              <td class="muted optional" title={r.comment}>{r.comment}</td>
+              {#if showComment}<td class="muted" title={r.comment}>{r.comment}</td>{/if}
             {:else}
               <td class="mono">{hhmm(r.time)}</td>
               <td>{r.band}</td>
@@ -376,11 +387,6 @@
   }
   table.fit td.more {
     white-space: normal;
-  }
-  @media (max-width: 1250px) {
-    table.fit .optional {
-      display: none;
-    }
   }
   .new {
     margin-right: 6px;

@@ -100,6 +100,9 @@
     otherPort = value === "";
     if (!otherPort) config.serial_port = value;
   }
+
+  // macOS blocks local network access until the app is allowed in Privacy & Security.
+  const isMac = navigator.userAgent.includes("Mac");
 </script>
 
 <Modal title="Radio control" {onclose}>
@@ -190,7 +193,12 @@
         {#if findError}
           <p class="bad">{findError}</p>
         {:else if radios && radios.length === 0}
-          <p class="bad">No FlexRadio answered. Check it's switched on and on the same network, or enter its IP address.</p>
+          <p class="bad">
+            No FlexRadio answered. Check it's switched on and on the same network, or enter its IP address.
+            {#if isMac}
+              On a Mac, also check OpenVKCL is turned on in System Settings → Privacy &amp; Security → Local Network.
+            {/if}
+          </p>
         {:else if radios && radios.length > 1}
           <label>
             Radio

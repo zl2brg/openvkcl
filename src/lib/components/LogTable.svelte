@@ -1,6 +1,5 @@
 <script lang="ts">
   import {
-    countdownText,
     dateText,
     hhmm,
     rangeTest,
@@ -9,20 +8,18 @@
     type DateRange,
     type QsoRow,
   } from "$lib/api";
+  import Countdown from "./Countdown.svelte";
 
   let {
     rows,
     contest,
     highlight = "",
-    now,
     range = $bindable({ from: "", to: "" }),
     onedit,
     ondone,
   }: {
     rows: QsoRow[];
     contest: ContestDef;
-    /** Ticks every second to drive the re-work countdowns. */
-    now: Date;
     /** Rows with this call are highlighted. */
     highlight?: string;
     /** Dates to show the log between, in general logs. */
@@ -96,10 +93,9 @@
     value: (r: QsoRow, n: number) => SortValue;
   }
 
-  /** When a running countdown ends, or null when there is none. */
+  /** Absolute re-work time for sorting; each cell owns its own countdown tick. */
   function reworkMs(r: QsoRow): number | null {
-    const t = r.rework_at ? new Date(r.rework_at).getTime() : NaN;
-    return t > now.getTime() ? t : null;
+    return r.rework_at ? new Date(r.rework_at).getTime() : null;
   }
 
   const text = (s: string) => s.trim() || null;
@@ -293,8 +289,7 @@
               {#if hasRework}
                 <td>
                   {#if r.rework_at}
-                    {@const left = countdownText(r.rework_at, now)}
-                    {#if left}<span class="rework" title={reworkTitle(r)}>⏱ {left}</span>{/if}
+                    <Countdown at={r.rework_at} title={reworkTitle(r)} />
                   {/if}
                 </td>
               {/if}
@@ -473,17 +468,6 @@
   }
   th[aria-sort="none"] .arrow {
     opacity: 0.4;
-  }
-  .rework {
-    display: inline-block;
-    min-width: 6.5em;
-    text-align: center;
-    padding: 1px 7px;
-    border: 1px solid var(--warn);
-    border-radius: 10px;
-    color: var(--warn);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
   }
   .muted {
     color: var(--muted);

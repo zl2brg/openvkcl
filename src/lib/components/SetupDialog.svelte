@@ -94,6 +94,22 @@
     defaultOffset();
   }
 
+  /** The contest restarts serials at 001 on each band for this category choice. */
+  function wantsSeparateSerials(): boolean {
+    const when = contest?.serial_per_band_when;
+    const op = setup.categories["CATEGORY-OPERATOR"];
+    const tx = setup.categories["CATEGORY-TRANSMITTER"];
+    if (when === "multi_op") return op === "MULTI-OP";
+    if (when === "multi_tx") return op === "MULTI-OP" && (tx === "TWO" || tx === "UNLIMITED");
+    return false;
+  }
+
+  /** Follow the contest rule when the operator or transmitter category changes. A manual tick stays until then. */
+  function applySerialRule() {
+    if (!contest || contest.serial_per_band) return;
+    setup.serial_per_band = wantsSeparateSerials();
+  }
+
   function save() {
     error = "";
     // A general log has no contest period; its start is just when it was created.
@@ -194,13 +210,28 @@
           <input type="checkbox" bind:checked={setup.serial_per_band} />
           Separate serial numbers on each band
         </label>
+        {#if wantsSeparateSerials()}
+          <p class="hint">
+            {contest?.serial_per_band_when === "multi_tx"
+              ? "Multi-transmitter stations start serial numbers at 001 on each band."
+              : "Multi-operator stations start serial numbers at 001 on each band."}
+          </p>
+        {/if}
       {/if}
 
       {#if contest?.categories.length}<h3>Categories</h3>{/if}
       {#each contest?.categories ?? [] as cat (cat.key)}
         <label class:plain={!!cat.label}>
           {cat.label || cat.key.replace("CATEGORY-", "").toLowerCase()}
-          <select bind:value={setup.categories[cat.key]}>
+          <select
+            bind:value={setup.categories[cat.key]}
+            onchange={(e) => {
+              if (cat.key === "CATEGORY-OPERATOR" || cat.key === "CATEGORY-TRANSMITTER") {
+                setup.categories[cat.key] = e.currentTarget.value;
+                applySerialRule();
+              }
+            }}
+          >
             {#each cat.options as opt (opt)}
               <option value={opt}>{opt || "(none)"}</option>
             {/each}

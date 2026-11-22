@@ -11,16 +11,15 @@
     type LogView,
     type QsoRow,
   } from "$lib/api";
+  import ContestTiming from "./ContestTiming.svelte";
 
   let {
     view,
-    now,
     check,
     rows,
     range,
   }: {
     view: LogView;
-    now: Date;
     check: CheckResult | null;
     /** In general logs, the contacts within `range`. */
     rows: QsoRow[];
@@ -87,34 +86,6 @@
       to: start.getTime() + (s.start_minute + s.minutes) * 60_000,
     })),
   );
-
-  let timing = $derived.by(() => {
-    const t = now.getTime();
-    if (t < start.getTime()) return `Starts in ${duration(start.getTime() - t)}`;
-    if (t >= end.getTime()) return "Contest has ended";
-    if (sessions.length) {
-      const i = sessions.findIndex((s) => t < s.to);
-      if (i < 0) return "Contest has ended";
-      const s = sessions[i];
-      if (t < s.from) return `Break · period ${i + 1} of ${sessions.length} starts in ${duration(s.from - t)}`;
-      return `Period ${i + 1} of ${sessions.length} · ${duration(s.to - t)} remaining · hour ${Math.floor((t - s.from) / 3_600_000) + 1}`;
-    }
-    let text = `${duration(end.getTime() - t)} remaining`;
-    const b = view.contest.blocks;
-    if (b) {
-      const block = Math.floor((t - start.getTime()) / (b.minutes * 60_000));
-      const total = Math.ceil(view.contest.duration_minutes / b.minutes);
-      text += ` · block ${block + 1} of ${total}`;
-    }
-    return text;
-  });
-
-  function duration(ms: number) {
-    const mins = Math.floor(ms / 60_000);
-    const h = Math.floor(mins / 60);
-    const m = mins % 60;
-    return h ? `${h}h ${m}m` : `${m}m`;
-  }
 
   function fmt(n: number) {
     return n % 1 ? n.toFixed(1) : n.toLocaleString("en-AU");
@@ -192,7 +163,7 @@
 
     <section>
       <h3>Contest time</h3>
-      <p>{timing}</p>
+      <ContestTiming startIso={view.setup.start} contest={view.contest} />
       {#if sessions.length}
         {#each sessions as s, i (i)}
           <p class="muted">

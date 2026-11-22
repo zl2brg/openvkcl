@@ -8,10 +8,8 @@
     errorText,
     formatFreq,
     pad,
-    clockText,
     dayBound,
     rangeTest,
-    zoneLabel,
     RIG_STATUS_EVENT,
     type CheckResult,
     type ContestDef,
@@ -25,7 +23,6 @@
     type RigStatus,
     type Settings,
   } from "$lib/api";
-  import { setLocalTime, timeZone } from "$lib/timezone.svelte";
   import EntryLine from "$lib/components/EntryLine.svelte";
   import LogTable from "$lib/components/LogTable.svelte";
   import ScorePanel from "$lib/components/ScorePanel.svelte";
@@ -37,6 +34,7 @@
   import { setTheme, theme } from "$lib/theme.svelte";
   import LookupDialog from "$lib/components/LookupDialog.svelte";
   import AdifDialog from "$lib/components/AdifDialog.svelte";
+  import Clock from "$lib/components/Clock.svelte";
 
   const LOG_FILTER = [{ name: "OpenVKCL log", extensions: ["ovkcl"] }];
 
@@ -46,7 +44,6 @@
   let view = $state<LogView | null>(null);
   let logVersion = $state(0);
   let rig = $state<RigStatus>({ connected: false, freq_hz: null, band: null, mode: null, rig_mode: null, error: null });
-  let now = $state(new Date());
   let version = $state("");
   let notice = $state("");
   let noticeIsError = $state(false);
@@ -90,7 +87,6 @@
   }
 
   onMount(() => {
-    const clock = setInterval(() => (now = new Date()), 1000);
     const unlisten = listen<RigStatus>(RIG_STATUS_EVENT, (e) => (rig = e.payload));
     (async () => {
       try {
@@ -117,7 +113,6 @@
       refreshLookupFiles();
     })();
     return () => {
-      clearInterval(clock);
       unlisten.then((f) => f());
     };
   });
@@ -371,13 +366,7 @@
         <span class="muted" title={rig.error ?? ""}>{rig.error ? "Radio not responding" : "No radio"}</span>
       {/if}
     </div>
-    <button
-      class="clock mono"
-      onclick={() => setLocalTime(!timeZone.local)}
-      title="Click to show times in {timeZone.local ? 'UTC' : 'local time'}. Logs and exports are always UTC."
-    >
-      {clockText(now)} {zoneLabel()}
-    </button>
+    <Clock />
     <button
       class="theme-toggle"
       onclick={() => setTheme(theme.mode === "dark" ? "light" : "dark")}
@@ -429,7 +418,6 @@
           setup={view.setup}
           {rig}
           {logVersion}
-          {now}
           {worked}
           qrzEnabled={!!settings?.qrz.enabled}
           onlog={logQso}
@@ -439,14 +427,13 @@
             rows={view.qsos}
             contest={view.contest}
             highlight={check?.previous[0]?.call ?? ""}
-            {now}
             bind:range
             onedit={(r) => (editRow = r)}
             ondone={refocus}
           />
         </div>
       </div>
-      <ScorePanel {view} {now} {check} rows={rangeRows} {range} />
+      <ScorePanel {view} {check} rows={rangeRows} {range} />
     </main>
   {:else}
     <section class="welcome">
@@ -599,14 +586,6 @@
   }
   .rig.on .dot {
     background: var(--ok);
-  }
-  .clock {
-    font-size: 1.05rem;
-    background: none;
-    border: none;
-    padding: 0;
-    color: inherit;
-    cursor: pointer;
   }
   .theme-toggle {
     display: flex;

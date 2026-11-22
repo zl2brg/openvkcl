@@ -1,7 +1,15 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
-  import { dateTimeText, parseDateTimeText, zoneLabel, type ContestDef, type Qso, type QsoRow } from "$lib/api";
+  import {
+    dateTimeText,
+    isFutureQsoTime,
+    parseDateTimeText,
+    zoneLabel,
+    type ContestDef,
+    type Qso,
+    type QsoRow,
+  } from "$lib/api";
 
   let {
     row,
@@ -47,6 +55,7 @@
     adif: r.adif,
   });
   let timeText = $state(dateTimeText(r.time));
+  let futureTime = $derived(isFutureQsoTime(parseDateTimeText(timeText)));
   let error = $state("");
   let hasNr = $derived(contest.exchange.includes("serial"));
   let hasExch = $derived(contest.exchange.includes("number"));
@@ -88,6 +97,9 @@
       <label>Time ({zoneLabel()}) <input class="mono" bind:value={timeText} /></label>
       <label>Call <input class="mono" bind:value={qso.call} /></label>
     </div>
+    {#if futureTime}
+      <p class="warn">QSO time is in the future</p>
+    {/if}
     <div class="row three">
       <label>
         Band
@@ -188,5 +200,10 @@
   }
   .spacer {
     flex: 1;
+  }
+  .warn {
+    margin: 0;
+    color: var(--warn);
+    font-size: 0.85rem;
   }
 </style>

@@ -7,11 +7,17 @@ A cross-platform (Windows, Linux, macOS) contest logger for Australian and New
 Zealand contests, in the spirit of VKCL by Mike VK3AVV (SK).
 
 Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
+Changes are listed in [CHANGELOG](CHANGELOG.md).
 
 ## Features
 
 - WIA contests: Remembrance Day, Trans-Tasman Low-Band, Harry Angel Sprint,
-  John Moyle Memorial Field Day and the VHF-UHF Field Days.
+  John Moyle Memorial Field Day and the VHF-UHF Field Days. Where the rules
+  restart serial numbers at 001 on each band, choosing that category ticks
+  "Separate serial numbers on each band": any multi-operator entry in the
+  VHF-UHF Field Day, multi-two and multi-multi in John Moyle, and multi-multi
+  in Trans-Tasman. Single-operator entries keep one series, as do multi-single
+  entries in John Moyle and Trans-Tasman.
 - NZART HF contests: Jock White Memorial Field Day, Memorial Contest and
   Sangster Shield, with their one-hour (or half-hour) periods, separate serial
   numbers per band, and branch-number multipliers.
@@ -63,14 +69,24 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
    also ask for your time zone during the contest; it defaults to this computer's
    offset on the contest date, so change it if your PC clock is set to UTC or
    you're operating away from home.
+   Choosing one of those categories ticks "Separate serial numbers on each
+   band". Changing back to a category that uses one series clears the tick.
+   The box can still be changed by hand until the category changes again, and
+   opening an existing log leaves its saved choice alone.
 2. Type a callsign. The status line shows DUPE, points and new multipliers as you type.
    Super Check Partial matches appear underneath (calls already in the log are
    highlighted; click one to use it), with the QRZ.com details when enabled.
 3. **Space** moves to the next exchange field, **Enter** logs, **Esc** clears.
+   RST sent is shown before RST received. In a contest, Space goes from the
+   call to RST received, then the serial, number and locator. In a general log
+   it goes call, RST sent, RST received, name, then comment.
    Without a radio connected, **Alt+Up/Down** changes band and **Alt+Left/Right** changes mode.
-4. Double-click a contact in the log to edit or delete it. Click the clock to
-   show times in UTC or local time; the log and exports always use UTC. The
-   sun/moon icon next to it switches between dark and light appearance.
+   Tick **Enter time** to log a contact at a chosen time. A time more than a
+   minute ahead is marked as in the future.
+4. Double-click a contact in the log to edit or delete it. The same future-time
+   warning appears there. Click the clock to show times in UTC or local time;
+   the log and exports always use UTC. The sun/moon icon next to it switches
+   between dark and light appearance.
 5. **Cabrillo…** previews the log and saves it for upload to
    [vklogchecker.com](https://www.vklogchecker.com).
 6. **Score sheet** writes per-band log sheets (CSV) with the period, points,

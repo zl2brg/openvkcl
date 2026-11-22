@@ -121,6 +121,16 @@ mod tests {
     }
 
     #[test]
+    fn wia_serial_per_band_when() {
+        use def::SerialPerBandWhen;
+        assert_eq!(def("wia-vhfuhf").serial_per_band_when, SerialPerBandWhen::MultiOp);
+        assert_eq!(def("wia-jmmfd").serial_per_band_when, SerialPerBandWhen::MultiTx);
+        assert_eq!(def("wia-tt").serial_per_band_when, SerialPerBandWhen::MultiTx);
+        assert_eq!(def("wia-rd").serial_per_band_when, SerialPerBandWhen::Never);
+        assert_eq!(def("wia-ha").serial_per_band_when, SerialPerBandWhen::Never);
+    }
+
+    #[test]
     fn general_log() {
         let d = def("general");
         let names: Vec<&str> = crate::bands::BANDS.iter().map(|b| b.name).collect();

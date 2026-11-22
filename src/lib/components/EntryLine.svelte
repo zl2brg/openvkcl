@@ -8,9 +8,9 @@
     errorText,
     dateTimeText,
     generalMode,
+    isFutureQsoTime,
     modeClass,
     parseDateTimeText,
-    untilText,
     zoneLabel,
     type CheckResult,
     type ContestDef,
@@ -21,13 +21,13 @@
     type RigStatus,
     type ScpMatches,
   } from "$lib/api";
+  import Countdown from "./Countdown.svelte";
 
   let {
     contest,
     setup,
     rig,
     logVersion,
-    now,
     worked,
     qrzEnabled,
     onlog,
@@ -38,7 +38,6 @@
     rig: RigStatus;
     /** Changes whenever the log changes, so dupe checks are refreshed. */
     logVersion: number;
-    now: Date;
     /** Calls already in the log, highlighted in the Super Check Partial list. */
     worked: Set<string>;
     qrzEnabled: boolean;
@@ -60,6 +59,7 @@
   let followRig = $state(true);
   let manualTime = $state(false);
   let timeText = $state("");
+  let futureTime = $derived(manualTime && isFutureQsoTime(parseDateTimeText(timeText)));
   let error = $state("");
   let busy = $state(false);
 
@@ -220,16 +220,16 @@
 
   function fieldOrder(): HTMLInputElement[] {
     if (general) {
-      return [callInput, rstInput, rstSentInput, nameInput, commentInput].filter(
+      return [callInput, rstSentInput, rstInput, nameInput, commentInput].filter(
         (x): x is HTMLInputElement => !!x,
       );
     }
     return [
       callInput,
+      rstInput,
       hasNr ? nrInput : undefined,
       hasExch ? exchInput : undefined,
       hasLoc ? locInput : undefined,
-      rstInput,
     ].filter(
       (x): x is HTMLInputElement => !!x,
     );
@@ -321,6 +321,9 @@
     </label>
     {#if manualTime}
       <input class="mono time" bind:value={timeText} title="QSO time, {zoneLabel()} (YYYY-MM-DD HH:MM)" />
+      {#if futureTime}
+        <span class="warn">QSO time is in the future</span>
+      {/if}
     {/if}
     {#if general}
       <div class="bandgrid">
@@ -347,6 +350,14 @@
         autocomplete="off"
         spellcheck="false"
       />
+    </label>
+    <label class="rst">
+      RST sent
+      <input class="mono" bind:this={rstSentInput} bind:value={sentRst} placeholder={defaultRst} autocomplete="off" />
+    </label>
+    <label class="rst">
+      RST rcvd
+      <input class="mono" bind:this={rstInput} bind:value={rcvdRst} placeholder={defaultRst} autocomplete="off" />
     </label>
     {#if !general}
       <label class="sent">
@@ -393,14 +404,6 @@
         />
       </label>
     {/if}
-    <label class="rst">
-      RST rcvd
-      <input class="mono" bind:this={rstInput} bind:value={rcvdRst} placeholder={defaultRst} autocomplete="off" />
-    </label>
-    <label class="rst">
-      RST sent
-      <input class="mono" bind:this={rstSentInput} bind:value={sentRst} placeholder={defaultRst} autocomplete="off" />
-    </label>
     {#if general}
       <label class="text">
         Name
@@ -443,7 +446,7 @@
       {:else if r.dupe}
         <span class="bad strong">DUPE</span>
         {#if r.next_ok}
-          <span>can work again {untilText(r.next_ok, now)}</span>
+          <Countdown at={r.next_ok} mode="until" />
         {:else}
           <span>already worked on this {contest.rework.per.includes("band") ? "band and " : ""}mode</span>
         {/if}

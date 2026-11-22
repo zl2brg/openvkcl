@@ -26,6 +26,8 @@ export interface ContestDef {
   number_label: string;
   number_from: string[];
   serial_per_band: boolean;
+  /** When the setup dialog should tick separate serials per band. */
+  serial_per_band_when: "never" | "multi_op" | "multi_tx";
   workable: string[];
   blocks: { minutes: number } | null;
   sessions: { start_minute: number; minutes: number }[];
@@ -506,6 +508,15 @@ export function generalMode(rigMode: string, current: string): string | null {
 /** QSL confirmations that count for DXCC: a paper card or LoTW. */
 export function isConfirmed(q: Qso): boolean {
   return q.qsl_rcvd === "Y" || q.lotw_rcvd === "Y";
+}
+
+/** Minute-precision entry can sit slightly ahead of wall clock; only warn past this slack. */
+const FUTURE_QSO_SLACK_MS = 60_000;
+
+/** True when a parsed QSO time is meaningfully after wall-clock now. */
+export function isFutureQsoTime(iso: string | null, now: Date = new Date()): boolean {
+  if (!iso) return false;
+  return new Date(iso).getTime() - now.getTime() > FUTURE_QSO_SLACK_MS;
 }
 
 /** A 4, 6, 8 or 10 character Maidenhead locator, e.g. "QF22", "RF73hc", "RF73hc34". */

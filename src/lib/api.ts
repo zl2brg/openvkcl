@@ -44,7 +44,11 @@ export interface ContestDef {
   };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
-  scoring: { bonus: Bonus[] };
+  scoring: {
+    bonus: Bonus[];
+    /** Only "fixed" points have `local_time`: a points factor between two local times (e.g. RD's 01:00-06:00 x3). */
+    points: { kind: string; local_time?: { from: string; to: string; factor: number } | null };
+  };
 }
 
 export interface Bonus {

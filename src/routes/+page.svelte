@@ -646,7 +646,8 @@
   }
   main {
     display: grid;
-    grid-template-columns: 1fr 280px;
+    /* minmax: a wide log table scrolls instead of pushing the side panel off screen. */
+    grid-template-columns: minmax(0, 1fr) 280px;
     gap: 12px;
     padding: 12px 14px;
     min-height: 0;
@@ -656,6 +657,7 @@
     flex-direction: column;
     gap: 12px;
     min-height: 0;
+    min-width: 0;
   }
   .table {
     flex: 1;

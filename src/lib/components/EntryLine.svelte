@@ -80,7 +80,8 @@
   let rigDriven = $derived(followRig && rig.connected);
 
   $effect(() => {
-    if (!contest.bands.includes(band)) band = contest.bands[0];
+    // General logs list every band from 2190m up; start on 20m rather than the first.
+    if (!contest.bands.includes(band)) band = contest.general && contest.bands.includes("20m") ? "20m" : contest.bands[0];
     if (!contest.modes.includes(mode)) mode = contest.modes[0];
   });
 

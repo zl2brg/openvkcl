@@ -26,6 +26,9 @@
   let error = $state("");
 
   let contest = $derived(contests.find((c) => c.id === setup.contest_id));
+  let general = $derived(!!contest?.general);
+  // General logging first, then the contests.
+  let choices = $derived([...contests].sort((a, b) => Number(b.general) - Number(a.general)));
   let bandBonuses = $derived(contest?.scoring.bonus.filter((b) => b.per_band) ?? []);
 
   /** Bands ticked for a per-band bonus. Without a list (older logs) the category claims every band. */
@@ -56,7 +59,8 @@
 
   function save() {
     error = "";
-    const start = new Date(`${startDate}T${startTime}:00Z`);
+    // A general log has no contest period; its start is just when it was created.
+    const start = general && isNew ? new Date() : new Date(`${startDate}T${startTime}:00Z`);
     if (isNaN(start.getTime())) {
       error = "Enter a valid start date and time.";
       return;
@@ -83,41 +87,48 @@
   }
 </script>
 
-<Modal title={isNew ? "New contest log" : "Contest setup"} {onclose} wide>
+<Modal title={isNew ? "New log" : general ? "Log setup" : "Contest setup"} {onclose} wide>
   <div class="grid">
     <section>
-      <h3>Contest</h3>
+      <h3>{general ? "Log" : "Contest"}</h3>
       <label>
-        Contest
+        Log type
         <select bind:value={setup.contest_id} onchange={contestChanged} disabled={!isNew}>
-          {#each contests as c (c.id)}
+          {#each choices as c (c.id)}
             <option value={c.id}>{c.name}</option>
           {/each}
         </select>
       </label>
-      {#if contest?.rules_url}
+      {#if general}
+        <p class="hint">
+          For everyday operating and chasing DX: no contest period, scoring or dupes. Shows each station's country and
+          whether it's a new one for you. Import your existing log with Import ADIF once it's created.
+        </p>
+      {:else if contest?.rules_url}
         <p class="hint">Rules: {contest.rules_url}</p>
       {/if}
-      <div class="row">
+      {#if !general}
+        <div class="row">
+          <label>
+            Start date (UTC)
+            <input type="date" bind:value={startDate} />
+          </label>
+          <label>
+            Start time (UTC)
+            <input type="time" bind:value={startTime} />
+          </label>
+        </div>
         <label>
-          Start date (UTC)
-          <input type="date" bind:value={startDate} />
+          Your local time zone
+          <select bind:value={setup.utc_offset_minutes}>
+            {#each offsets as o (o)}
+              <option value={o}>{offsetLabel(o)}</option>
+            {/each}
+          </select>
         </label>
-        <label>
-          Start time (UTC)
-          <input type="time" bind:value={startTime} />
-        </label>
-      </div>
-      <label>
-        Your local time zone
-        <select bind:value={setup.utc_offset_minutes}>
-          {#each offsets as o (o)}
-            <option value={o}>{offsetLabel(o)}</option>
-          {/each}
-        </select>
-      </label>
+      {/if}
 
-      <h3>Exchange</h3>
+      <h3>{general ? "Station" : "Exchange"}</h3>
       <div class="row">
         <label>
           Callsign
@@ -143,7 +154,7 @@
         </label>
       {/if}
 
-      <h3>Categories</h3>
+      {#if contest?.categories.length}<h3>Categories</h3>{/if}
       {#each contest?.categories ?? [] as cat (cat.key)}
         <label class:plain={!!cat.label}>
           {cat.label || cat.key.replace("CATEGORY-", "").toLowerCase()}
@@ -157,8 +168,10 @@
     </section>
 
     <section>
-      <h3>Station details (Cabrillo header)</h3>
-      <label>Operators <input class="mono" bind:value={setup.station.operators} placeholder="VK3ABC VK3XYZ" /></label>
+      <h3>{general ? "Station details" : "Station details (Cabrillo header)"}</h3>
+      {#if !general}
+        <label>Operators <input class="mono" bind:value={setup.station.operators} placeholder="VK3ABC VK3XYZ" /></label>
+      {/if}
       <label>Name <input bind:value={setup.station.name} /></label>
       <label>Email <input type="email" bind:value={setup.station.email} /></label>
       <label>Club <input bind:value={setup.station.club} /></label>
@@ -171,8 +184,10 @@
         <label>Postcode <input bind:value={setup.station.postcode} /></label>
         <label>Country <input bind:value={setup.station.country} /></label>
       </div>
-      <label>Location <input bind:value={setup.location} placeholder="e.g. VIC" /></label>
-      <label>Soapbox <textarea rows="3" bind:value={setup.soapbox}></textarea></label>
+      {#if !general}
+        <label>Location <input bind:value={setup.location} placeholder="e.g. VIC" /></label>
+        <label>Soapbox <textarea rows="3" bind:value={setup.soapbox}></textarea></label>
+      {/if}
       {#each bandBonuses as b (b.category)}
         <div class="bands">
           {b.label || `${b.value} x${b.factor} on`}

@@ -1,11 +1,11 @@
 use crate::bands;
-use crate::model::{LogSetup, Qso};
+use crate::model::{LogSetup, Qso, QsoDetails};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::path::Path;
 
 const APP_TAG: &str = "openvkcl";
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (
@@ -28,13 +28,48 @@ CREATE TABLE IF NOT EXISTS qso (
     operator TEXT NOT NULL DEFAULT '',
     deleted INTEGER NOT NULL DEFAULT 0,
     sent_exch TEXT NOT NULL DEFAULT '',
-    rcvd_exch TEXT NOT NULL DEFAULT ''
+    rcvd_exch TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL DEFAULT '',
+    qth TEXT NOT NULL DEFAULT '',
+    comment TEXT NOT NULL DEFAULT '',
+    dxcc INTEGER,
+    qsl_sent TEXT NOT NULL DEFAULT '',
+    qsl_rcvd TEXT NOT NULL DEFAULT '',
+    lotw_sent TEXT NOT NULL DEFAULT '',
+    lotw_rcvd TEXT NOT NULL DEFAULT '',
+    eqsl_sent TEXT NOT NULL DEFAULT '',
+    eqsl_rcvd TEXT NOT NULL DEFAULT '',
+    adif TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS qso_call ON qso(call);
 ";
 
 const COLUMNS: &str = "id, time, call, band, mode, freq_khz, sent_rst, sent_nr, sent_locator, \
-                       rcvd_rst, rcvd_nr, rcvd_locator, operator, sent_exch, rcvd_exch";
+                       rcvd_rst, rcvd_nr, rcvd_locator, operator, sent_exch, rcvd_exch, \
+                       name, qth, comment, dxcc, qsl_sent, qsl_rcvd, lotw_sent, lotw_rcvd, \
+                       eqsl_sent, eqsl_rcvd, adif";
+
+/// Added in schema version 3.
+const DETAIL_COLUMNS: &str = "
+    ALTER TABLE qso ADD COLUMN name TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN qth TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN comment TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN dxcc INTEGER;
+    ALTER TABLE qso ADD COLUMN qsl_sent TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN qsl_rcvd TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN lotw_sent TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN lotw_rcvd TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN eqsl_sent TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN eqsl_rcvd TEXT NOT NULL DEFAULT '';
+    ALTER TABLE qso ADD COLUMN adif TEXT NOT NULL DEFAULT '';
+";
+
+const INSERT: &str = "INSERT INTO qso (time, call, band, mode, freq_khz, sent_rst, sent_nr, sent_locator,
+                                       rcvd_rst, rcvd_nr, rcvd_locator, operator, sent_exch, rcvd_exch,
+                                       name, qth, comment, dxcc, qsl_sent, qsl_rcvd, lotw_sent, lotw_rcvd,
+                                       eqsl_sent, eqsl_rcvd, adif)
+                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                              ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25)";
 
 pub struct Store {
     conn: Connection,
@@ -71,7 +106,63 @@ fn row_to_qso(row: &Row) -> rusqlite::Result<Qso> {
         operator: row.get(12)?,
         sent_exch: row.get(13)?,
         rcvd_exch: row.get(14)?,
+        details: QsoDetails {
+            name: row.get(15)?,
+            qth: row.get(16)?,
+            comment: row.get(17)?,
+            dxcc: row.get(18)?,
+            qsl_sent: row.get(19)?,
+            qsl_rcvd: row.get(20)?,
+            lotw_sent: row.get(21)?,
+            lotw_rcvd: row.get(22)?,
+            eqsl_sent: row.get(23)?,
+            eqsl_rcvd: row.get(24)?,
+            adif: serde_json::from_str(&row.get::<_, String>(25)?).unwrap_or_default(),
+        },
     })
+}
+
+fn adif_json(d: &QsoDetails) -> String {
+    if d.adif.is_empty() {
+        String::new()
+    } else {
+        serde_json::to_string(&d.adif).unwrap_or_default()
+    }
+}
+
+fn insert_with(conn: &Connection, q: &Qso) -> rusqlite::Result<i64> {
+    let d = &q.details;
+    conn.execute(
+        INSERT,
+        params![
+            time_str(&q.time),
+            q.call,
+            bands::canonical(&q.band),
+            q.mode,
+            q.freq_khz,
+            q.sent_rst,
+            q.sent_nr,
+            q.sent_locator,
+            q.rcvd_rst,
+            q.rcvd_nr,
+            q.rcvd_locator,
+            q.operator,
+            q.sent_exch,
+            q.rcvd_exch,
+            d.name,
+            d.qth,
+            d.comment,
+            d.dxcc,
+            d.qsl_sent,
+            d.qsl_rcvd,
+            d.lotw_sent,
+            d.lotw_rcvd,
+            d.eqsl_sent,
+            d.eqsl_rcvd,
+            adif_json(d)
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
 }
 
 impl Store {
@@ -113,6 +204,9 @@ impl Store {
                      ALTER TABLE qso ADD COLUMN rcvd_exch TEXT NOT NULL DEFAULT '';",
                 )
                 .map_err(err)?;
+        }
+        if version < 3 {
+            store.conn.execute_batch(DETAIL_COLUMNS).map_err(err)?;
         }
         if version < SCHEMA_VERSION {
             store.set_meta("schema", &SCHEMA_VERSION.to_string())?;
@@ -177,30 +271,16 @@ impl Store {
     }
 
     pub fn insert(&self, q: &Qso) -> Result<i64, String> {
-        self.conn
-            .execute(
-                "INSERT INTO qso (time, call, band, mode, freq_khz, sent_rst, sent_nr, sent_locator,
-                                  rcvd_rst, rcvd_nr, rcvd_locator, operator, sent_exch, rcvd_exch)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-                params![
-                    time_str(&q.time),
-                    q.call,
-                    bands::canonical(&q.band),
-                    q.mode,
-                    q.freq_khz,
-                    q.sent_rst,
-                    q.sent_nr,
-                    q.sent_locator,
-                    q.rcvd_rst,
-                    q.rcvd_nr,
-                    q.rcvd_locator,
-                    q.operator,
-                    q.sent_exch,
-                    q.rcvd_exch
-                ],
-            )
-            .map_err(err)?;
-        Ok(self.conn.last_insert_rowid())
+        insert_with(&self.conn, q).map_err(err)
+    }
+
+    /// Insert many contacts in one transaction, setting each one's id.
+    pub fn insert_all(&mut self, qsos: &mut [Qso]) -> Result<(), String> {
+        let tx = self.conn.transaction().map_err(err)?;
+        for q in qsos.iter_mut() {
+            q.id = insert_with(&tx, q).map_err(err)?;
+        }
+        tx.commit().map_err(err)
     }
 
     pub fn update(&self, q: &Qso) -> Result<(), String> {
@@ -210,7 +290,9 @@ impl Store {
                 "UPDATE qso SET time = ?2, call = ?3, band = ?4, mode = ?5, freq_khz = ?6,
                      sent_rst = ?7, sent_nr = ?8, sent_locator = ?9, rcvd_rst = ?10,
                      rcvd_nr = ?11, rcvd_locator = ?12, operator = ?13,
-                     sent_exch = ?14, rcvd_exch = ?15
+                     sent_exch = ?14, rcvd_exch = ?15, name = ?16, qth = ?17, comment = ?18,
+                     dxcc = ?19, qsl_sent = ?20, qsl_rcvd = ?21, lotw_sent = ?22,
+                     lotw_rcvd = ?23, eqsl_sent = ?24, eqsl_rcvd = ?25, adif = ?26
                  WHERE id = ?1 AND deleted = 0",
                 params![
                     q.id,
@@ -227,7 +309,18 @@ impl Store {
                     q.rcvd_locator,
                     q.operator,
                     q.sent_exch,
-                    q.rcvd_exch
+                    q.rcvd_exch,
+                    q.details.name,
+                    q.details.qth,
+                    q.details.comment,
+                    q.details.dxcc,
+                    q.details.qsl_sent,
+                    q.details.qsl_rcvd,
+                    q.details.lotw_sent,
+                    q.details.lotw_rcvd,
+                    q.details.eqsl_sent,
+                    q.details.eqsl_rcvd,
+                    adif_json(&q.details)
                 ],
             )
             .map_err(err)?;
@@ -290,6 +383,13 @@ mod tests {
             operator: String::new(),
             sent_exch: "12".into(),
             rcvd_exch: "30".into(),
+            details: QsoDetails {
+                name: "Bob".into(),
+                dxcc: Some(150),
+                lotw_rcvd: "Y".into(),
+                adif: [("TX_PWR".to_string(), "100".to_string())].into(),
+                ..Default::default()
+            },
         };
         q.id = store.insert(&q).unwrap();
         q.call = "VK2ABD".into();
@@ -305,6 +405,7 @@ mod tests {
         assert_eq!(qsos[0].call, "VK2ABD");
         assert_eq!(qsos[0].time, start);
         assert_eq!(qsos[0].rcvd_exch, "30");
+        assert_eq!(qsos[0].details, q.details);
         assert_eq!(store.upgraded_from, None);
 
         // A version 1 file: no exch columns, and the number kept in rcvd_nr.
@@ -313,6 +414,17 @@ mod tests {
             .execute_batch(
                 "ALTER TABLE qso DROP COLUMN sent_exch;
                  ALTER TABLE qso DROP COLUMN rcvd_exch;
+                 ALTER TABLE qso DROP COLUMN name;
+                 ALTER TABLE qso DROP COLUMN qth;
+                 ALTER TABLE qso DROP COLUMN comment;
+                 ALTER TABLE qso DROP COLUMN dxcc;
+                 ALTER TABLE qso DROP COLUMN qsl_sent;
+                 ALTER TABLE qso DROP COLUMN qsl_rcvd;
+                 ALTER TABLE qso DROP COLUMN lotw_sent;
+                 ALTER TABLE qso DROP COLUMN lotw_rcvd;
+                 ALTER TABLE qso DROP COLUMN eqsl_sent;
+                 ALTER TABLE qso DROP COLUMN eqsl_rcvd;
+                 ALTER TABLE qso DROP COLUMN adif;
                  UPDATE meta SET value = '1' WHERE key = 'schema';",
             )
             .unwrap();
@@ -322,6 +434,7 @@ mod tests {
         store.move_numbers_to_exch().unwrap();
         let qsos = store.qsos().unwrap();
         assert_eq!((qsos[0].rcvd_nr.as_str(), qsos[0].rcvd_exch.as_str()), ("", "30"));
+        assert_eq!(qsos[0].details, QsoDetails::default());
         drop(store);
         let (store, _) = Store::open(&path).unwrap();
         assert_eq!(store.upgraded_from, None);

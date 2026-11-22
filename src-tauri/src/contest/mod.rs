@@ -6,6 +6,7 @@ pub use def::ContestDef;
 use std::path::Path;
 
 const BUILTIN: &[(&str, &str)] = &[
+    ("general.toml", include_str!("../../contests/general.toml")),
     ("wia-rd.toml", include_str!("../../contests/wia-rd.toml")),
     ("wia-tt.toml", include_str!("../../contests/wia-tt.toml")),
     ("wia-ha.toml", include_str!("../../contests/wia-ha.toml")),
@@ -108,6 +109,7 @@ mod tests {
             operator: String::new(),
             sent_exch: String::new(),
             rcvd_exch: "1".into(),
+            details: Default::default(),
         }
     }
 
@@ -116,6 +118,27 @@ mod tests {
         let (defs, errors) = load_all(None);
         assert!(errors.is_empty(), "{errors:?}");
         assert_eq!(defs.len(), BUILTIN.len());
+    }
+
+    #[test]
+    fn general_log() {
+        let d = def("general");
+        let names: Vec<&str> = crate::bands::BANDS.iter().map(|b| b.name).collect();
+        assert_eq!(d.bands, names);
+        let general_modes: Vec<&str> = crate::modes::GENERAL.iter().map(|m| m.0).collect();
+        assert_eq!(d.modes, general_modes);
+        let start = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let s = setup("general", start);
+        let qsos = vec![
+            qso(1, start, "JA1ABC", "20m", "FT8"),
+            qso(2, start + Duration::minutes(1), "JA1ABC", "20m", "FT8"),
+            qso(3, start - Duration::days(9000), "W1AW", "40m", "CW"),
+        ];
+        let e = evaluate(&d, &s, &qsos);
+        assert!(e.results.iter().all(|r| !r.dupe && r.invalid.is_none() && r.warning.is_none()));
+        assert!(e.results.iter().all(|r| r.points == 0.0 && r.rework_at.is_none()));
+        assert_eq!(e.score.qsos, 3);
+        assert_eq!(e.score.by_band, vec![("20m".to_string(), 2), ("40m".to_string(), 1)]);
     }
 
     #[test]

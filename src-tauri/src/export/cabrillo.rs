@@ -102,6 +102,7 @@ mod tests {
             operator: String::new(),
             sent_exch: "30".into(),
             rcvd_exch: "45".into(),
+            details: Default::default(),
         }
     }
 
@@ -326,7 +327,7 @@ mod tests {
         // Known exceptions: underscore / space are outside A–Z, 0–9, hyphen.
         let exceptions = ["WIA_VHFUHF", "WIA-HARRY ANGEL", "WIA-TRANS TASMAN"];
         let mut bad = Vec::new();
-        for d in &defs {
+        for d in defs.iter().filter(|d| !d.general) {
             if !contest_name_ok(&d.cabrillo_name) && !exceptions.contains(&d.cabrillo_name.as_str())
             {
                 bad.push(format!("{} -> {}", d.id, d.cabrillo_name));

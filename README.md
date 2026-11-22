@@ -26,6 +26,18 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
   each contact in the log shows a ⏱ countdown beside the call until that
   station can be worked again on that band and mode.
 - Distance scoring from 6, 8 or 10-character Maidenhead locators.
+- General logging for everyday operating and DX chasing: no contest rules, ADIF
+  modes (SSB, CW, FT8, FT4, …) on every band from 2190m up, name, QTH, comment
+  and QSL card / LoTW / eQSL status for each contact. As you type a call it
+  shows the station's DXCC country and zones and whether it's a new country, or
+  new on this band or mode, for you; the side panel counts countries worked and
+  confirmed overall, by band and by phone/CW/data. Filter the log, the counts
+  and ADIF exports by date (e.g. from 1 January 2026). Countries come from the
+  cty.csv country file: download it from **Lookups…**.
+- ADIF import into any log: contacts already in the log are skipped, and a
+  contest log only takes contacts from the contest period on its bands and modes.
+  An optional date range imports part of a large file. Other ADIF fields (power,
+  LoTW dates, …) are kept and written back out on export.
 - Cabrillo 3.0 export with the contest names vklogchecker.com expects, plus ADIF
   and a per-band CSV score sheet (distance, claimed points and running total
   for each contact).
@@ -44,7 +56,8 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 
 ## Using it
 
-1. **New log** - pick the contest, start time, your callsign and exchange details.
+1. **New log** - pick the contest, start time, your callsign and exchange details,
+   or **General logging (DX)** for an everyday logbook.
    WIA contests that use an overlay offer Youth, Rookie and YL as well as none.
 2. Type a callsign. The status line shows DUPE, points and new multipliers as you type.
    Super Check Partial matches appear underneath (calls already in the log are

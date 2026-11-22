@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "OpenVKCL",
-        "width": 1200,
-        "height": 800,
+        "width": 1280,
+        "height": 820,
         "minWidth": 1100,
         "minHeight": 700
       }

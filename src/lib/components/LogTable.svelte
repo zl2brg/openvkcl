@@ -88,6 +88,10 @@
     key: string;
     label: string;
     num?: boolean;
+    /** Fixed width, in general logs; columns without one share what's left. */
+    width?: string;
+    /** Hidden in narrow windows. */
+    optional?: boolean;
     /** What the column sorts by; null (no value) always sorts last. */
     value: (r: QsoRow, n: number) => SortValue;
   }
@@ -115,17 +119,16 @@
 
   let timeLabel = $derived(zoneLabel() === "UTC" ? "UTC" : "Local");
   let generalColumns = $derived<Column[]>([
-    { key: "n", label: "#", num: true, value: (_, n) => n },
-    { key: "date", label: "Date", value: (r) => new Date(r.time).getTime() },
-    { key: "time", label: timeLabel, value: (r) => new Date(r.time).getTime() },
-    { key: "band", label: "Band", value: (r) => bandIndex(r.band) },
-    { key: "mode", label: "Mode", value: (r) => text(r.mode) },
-    { key: "call", label: "Call", value: (r) => text(r.call) },
+    { key: "n", label: "#", num: true, width: "3.5rem", value: (_, n) => n },
+    { key: "time", label: timeLabel, width: "9rem", value: (r) => new Date(r.time).getTime() },
+    { key: "band", label: "Band", width: "4.2rem", value: (r) => bandIndex(r.band) },
+    { key: "mode", label: "Mode", width: "4.4rem", value: (r) => text(r.mode) },
+    { key: "call", label: "Call", width: "6.5rem", value: (r) => text(r.call) },
     { key: "country", label: "Country", value: (r) => text(r.country ?? "") },
-    { key: "sent", label: "Sent", value: (r) => text(r.sent_rst) },
-    { key: "rcvd", label: "Rcvd", value: (r) => text(r.rcvd_rst) },
+    { key: "sent", label: "Sent", width: "4.2rem", value: (r) => text(r.sent_rst) },
+    { key: "rcvd", label: "Rcvd", width: "4.2rem", value: (r) => text(r.rcvd_rst) },
     { key: "name", label: "Name", value: (r) => text(r.name) },
-    { key: "comment", label: "Comment", value: (r) => text(r.comment) },
+    { key: "comment", label: "Comment", optional: true, value: (r) => text(r.comment) },
   ]);
 
   let contestColumns = $derived<Column[]>([
@@ -236,12 +239,12 @@
     {/if}
   </div>
   <div class="wrap">
-    <table>
+    <table class:fit={general}>
       <thead>
         <tr>
           {#each columns as c (c.key)}
             {@const dir = sort?.key === c.key ? sort.dir : 0}
-            <th class:num={c.num} aria-sort={dir === 1 ? "ascending" : dir === -1 ? "descending" : "none"}>
+            <th class:num={c.num} class:optional={c.optional} style:width={c.width} aria-sort={dir === 1 ? "ascending" : dir === -1 ? "descending" : "none"}>
               <button class="sort" onclick={() => toggleSort(c.key)} title={sortTitle(c)}>
                 {c.label}<span class="arrow">{dir === 1 ? "▲" : dir === -1 ? "▼" : "↕"}</span>
               </button>
@@ -260,18 +263,17 @@
           >
             <td class="num muted">{n}</td>
             {#if general}
-              <td class="mono">{dateText(r.time)}</td>
-              <td class="mono">{hhmm(r.time)}</td>
+              <td class="mono">{dateText(r.time)} {hhmm(r.time)}</td>
               <td>{r.band}</td>
-              <td>{r.mode}</td>
-              <td class="mono call">{r.call}</td>
-              <td class="country" title={countryTitle(r)}>
-                {r.country ?? ""}{#if r.new_dxcc}<span class="new" title="First contact with {r.country}">NEW</span>{/if}
+              <td title={r.mode}>{r.mode}</td>
+              <td class="mono call" title={r.call}>{r.call}</td>
+              <td title={countryTitle(r)}>
+                {#if r.new_dxcc}<span class="new" title="First contact with {r.country}">NEW</span>{/if}{r.country ?? ""}
               </td>
               <td class="mono">{r.sent_rst}</td>
               <td class="mono">{r.rcvd_rst}</td>
-              <td class="clip" title={r.name}>{r.name}</td>
-              <td class="clip muted" title={r.comment}>{r.comment}</td>
+              <td title={r.name}>{r.name}</td>
+              <td class="muted optional" title={r.comment}>{r.comment}</td>
             {:else}
               <td class="mono">{hhmm(r.time)}</td>
               <td>{r.band}</td>
@@ -361,19 +363,33 @@
     font-size: 0.85rem;
     padding: 3px 8px;
   }
-  .country .new {
-    margin-left: 6px;
+  /* General logs: fixed column widths so the table always fits, long text cut short. */
+  table.fit {
+    table-layout: fixed;
+  }
+  table.fit th,
+  table.fit td {
+    padding-left: 6px;
+    padding-right: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.fit td.more {
+    white-space: normal;
+  }
+  @media (max-width: 1250px) {
+    table.fit .optional {
+      display: none;
+    }
+  }
+  .new {
+    margin-right: 6px;
     padding: 0 5px;
     border: 1px solid var(--accent);
     border-radius: 8px;
     color: var(--accent);
     font-size: 0.75rem;
     font-weight: 700;
-  }
-  .clip {
-    max-width: 16em;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .more {
     text-align: center;

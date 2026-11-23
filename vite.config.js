@@ -41,7 +41,7 @@ export default defineConfig(() => ({
     // https://v2.tauri.app/start/frontend/vite/
     // https://v2.tauri.app/reference/webview-versions/
     target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "es2020",
-    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
+    minify: !process.env.TAURI_ENV_DEBUG ? /** @type {const} */ ("esbuild") : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     cssTarget: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari14",
   },

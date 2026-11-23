@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- macOS asks before an app uses the local network; FlexRadio discovery and
+       network radios (FlexRadio, TCI, rigctld, FLRig on another computer) need it. -->
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>OpenVKCL finds and controls radios on your local network, such as FlexRadio and TCI radios.</string>
+</dict>
+</plist>

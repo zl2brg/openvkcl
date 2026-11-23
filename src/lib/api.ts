@@ -270,7 +270,16 @@ export interface ImportResult {
   view: LogView;
 }
 
-export type RigKind = "none" | "hamlib" | "rigctld" | "flrig" | "tci";
+export type RigKind = "none" | "hamlib" | "rigctld" | "flrig" | "tci" | "flex";
+
+export interface FlexRadio {
+  ip: string;
+  port: number;
+  model: string;
+  nickname: string;
+  callsign: string;
+  serial: string;
+}
 
 export interface RigConfig {
   kind: RigKind;
@@ -412,6 +421,7 @@ export const api = {
   rigDisconnect: () => invoke<void>("rig_disconnect"),
   rigStatus: () => invoke<RigStatus>("rig_status"),
   rigModels: () => invoke<RigModel[]>("rig_models"),
+  flexDiscover: () => invoke<FlexRadio[]>("flex_discover"),
   serialPorts: () => invoke<SerialPort[]>("serial_ports"),
   appVersion: () => invoke<string>("app_version"),
   scpStatus: () => invoke<ScpStatus>("scp_status"),

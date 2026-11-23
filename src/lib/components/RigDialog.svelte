@@ -5,6 +5,7 @@
     api,
     errorText,
     formatFreq,
+    type FlexRadio,
     type RigConfig,
     type RigKind,
     type RigModel,
@@ -26,7 +27,7 @@
 
   let config = $state<RigConfig>(untrack(() => $state.snapshot(initial)) as RigConfig);
 
-  const defaultPorts: Record<RigKind, number> = { none: 0, hamlib: 0, rigctld: 4532, flrig: 12345, tci: 50001 };
+  const defaultPorts: Record<RigKind, number> = { none: 0, hamlib: 0, rigctld: 4532, flrig: 12345, tci: 50001, flex: 4992 };
   const bauds = [4800, 9600, 19200, 38400, 57600, 115200];
 
   let models = $state<RigModel[]>([]);
@@ -57,6 +58,31 @@
     }
   }
 
+  let radios = $state<FlexRadio[] | null>(null);
+  let finding = $state(false);
+  let findError = $state("");
+
+  async function findRadios() {
+    finding = true;
+    findError = "";
+    try {
+      radios = await api.flexDiscover();
+      if (radios.length === 1) pickRadio(radios[0]);
+    } catch (e) {
+      findError = errorText(e);
+    } finally {
+      finding = false;
+    }
+  }
+
+  function pickRadio(r: FlexRadio) {
+    config.host = r.ip;
+    config.port = r.port;
+  }
+
+  const radioLabel = (r: FlexRadio) =>
+    [r.model, r.nickname, r.callsign].filter(Boolean).join(" · ") + ` (${r.ip})`;
+
   async function refreshPorts() {
     ports = await api.serialPorts();
   }
@@ -74,6 +100,9 @@
     otherPort = value === "";
     if (!otherPort) config.serial_port = value;
   }
+
+  // macOS blocks local network access until the app is allowed in Privacy & Security.
+  const isMac = navigator.userAgent.includes("Mac");
 </script>
 
 <Modal title="Radio control" {onclose}>
@@ -86,6 +115,7 @@
         <option value="rigctld">Hamlib rigctld already running</option>
         <option value="flrig">FLRig</option>
         <option value="tci">TCI (cudaSDR, ExpertSDR, Thetis)</option>
+        <option value="flex">FlexRadio (SmartSDR: 6000, 8000 and Aurora)</option>
       </select>
     </label>
     {#if config.kind === "hamlib"}
@@ -153,8 +183,36 @@
       <div class="row">
         <label>Host <input bind:value={config.host} /></label>
         <label>Port <input type="number" bind:value={config.port} min="1" max="65535" /></label>
+        {#if config.kind === "flex"}
+          <button class="refresh" onclick={findRadios} disabled={finding} title="Listen for FlexRadios on this network">
+            {finding ? "Looking…" : "Find radios"}
+          </button>
+        {/if}
       </div>
-      {#if config.kind === "tci"}
+      {#if config.kind === "flex"}
+        {#if findError}
+          <p class="bad">{findError}</p>
+        {:else if radios && radios.length === 0}
+          <p class="bad">
+            No FlexRadio answered. Check it's switched on and on the same network, or enter its IP address.
+            {#if isMac}
+              On a Mac, also check OpenVKCL is turned on in System Settings → Privacy &amp; Security → Local Network.
+            {/if}
+          </p>
+        {:else if radios && radios.length > 1}
+          <label>
+            Radio
+            <select onchange={(e) => pickRadio(radios![+(e.currentTarget as HTMLSelectElement).value])}>
+              {#each radios as r, i (r.ip + r.port)}
+                <option value={i} selected={r.ip === config.host}>{radioLabel(r)}</option>
+              {/each}
+            </select>
+          </label>
+        {:else if radios && radios.length === 1}
+          <p class="status">Found {radioLabel(radios[0])}</p>
+        {/if}
+      {/if}
+      {#if config.kind === "tci" || config.kind === "flex"}
         <label class="check">
           <input type="checkbox" bind:checked={config.spots} />
           Mark logged contacts on the SDR's band display
@@ -170,6 +228,11 @@
           Enable the TCI server in your SDR software. cudaSDR listens on port 50001, ExpertSDR on 40001.
           The SDR pushes frequency and mode changes, so the entry line follows the radio instantly.
         </p>
+      {:else if config.kind === "flex"}
+        <p class="hint">
+          OpenVKCL talks to the radio directly over the network (SmartSDR API, port 4992) and follows the transmit
+          slice. SmartSDR or another client must have a slice open. No SmartSDR CAT or DAX needed.
+        </p>
       {:else if config.kind === "rigctld"}
         <p class="hint">
           For a rigctld you start yourself, e.g. on another computer:
@@ -182,7 +245,9 @@
     {/if}
     <p class="status">
       Status:
-      {#if status.connected}
+      {#if status.connected && status.freq_hz == null}
+        <span class="ok">connected</span> — no slice active. Open a slice in SmartSDR to follow it.
+      {:else if status.connected}
         <span class="ok">connected</span> — {formatFreq(status.freq_hz)} kHz {status.rig_mode ?? ""}
       {:else if status.error}
         <span class="bad">{status.error}</span>

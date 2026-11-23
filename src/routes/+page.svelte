@@ -390,7 +390,10 @@
     </div>
     <div class="rig" class:on={rig.connected}>
       <span class="dot"></span>
-      {#if rig.connected}
+      {#if rig.connected && rig.freq_hz == null}
+        <span>Connected</span>
+        <span class="muted" title="Open a slice in SmartSDR to follow it">no slice active</span>
+      {:else if rig.connected}
         <span class="mono">{formatFreq(rig.freq_hz)} kHz</span>
         <span>{rig.rig_mode ?? ""}</span>
         <span class="muted">{rig.band ?? "out of band"}</span>

@@ -1,3 +1,4 @@
+use crate::cluster::{Cluster, ClusterConfig, ClusterStatus, Spot};
 use crate::contest::def::ExchField;
 use crate::contest::engine::{self, QsoResult, Score};
 use crate::contest::{self, ContestDef};
@@ -43,6 +44,7 @@ pub struct AppState {
     pub cty: Mutex<Cty>,
     pub cty_path: PathBuf,
     pub qrz: Qrz,
+    pub cluster: Cluster,
 }
 
 impl AppState {
@@ -65,6 +67,7 @@ impl AppState {
             cty: Mutex::new(Cty::load(&cty_path)),
             cty_path,
             qrz: Qrz::default(),
+            cluster: Cluster::default(),
         }
     }
 
@@ -806,4 +809,34 @@ pub async fn qrz_lookup(state: State<'_, AppState>, call: String) -> CmdResult<O
         return Ok(None);
     }
     state.qrz.lookup(&cfg, &qrz_agent(), &call).await
+}
+
+/// The DX cluster login: its own callsign, else the station's.
+pub fn cluster_login(settings: &Settings) -> String {
+    let own = settings.cluster.callsign.trim();
+    if own.is_empty() { settings.station.callsign.clone() } else { own.to_string() }
+}
+
+/// Save the DX cluster settings and reconnect with them.
+#[tauri::command]
+pub fn cluster_connect(app: AppHandle, state: State<AppState>, config: ClusterConfig) -> CmdResult<ClusterStatus> {
+    let login = {
+        let mut s = state.settings.lock().unwrap();
+        s.cluster = config.clone();
+        s.save(&state.settings_path)?;
+        cluster_login(&s)
+    };
+    state.cluster.start(app, config, login);
+    Ok(state.cluster.status())
+}
+
+#[tauri::command]
+pub fn cluster_status(state: State<AppState>) -> ClusterStatus {
+    state.cluster.status()
+}
+
+/// Recent spots, oldest first, for the UI to start from.
+#[tauri::command]
+pub fn cluster_spots(state: State<AppState>) -> Vec<Spot> {
+    state.cluster.spots()
 }

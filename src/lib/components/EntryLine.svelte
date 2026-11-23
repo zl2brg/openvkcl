@@ -187,6 +187,24 @@
     callInput?.focus();
   }
 
+  /**
+   * Work a DX cluster spot: fill in the call and, unless the radio sets them,
+   * the spot's band and any mode its comment names (e.g. "FT8 -12dB").
+   */
+  export function useSpot(spotCall: string, spotBand: string | null, comment = "") {
+    call = spotCall.toUpperCase();
+    if (!rigDriven) {
+      if (spotBand && contest.bands.includes(spotBand)) band = spotBand;
+      const named = comment
+        .toUpperCase()
+        .split(/[^A-Z0-9]+/)
+        .map((w) => (w === "USB" || w === "LSB" ? "SSB" : w))
+        .find((w) => contest.general && contest.modes.includes(w));
+      if (named) mode = named;
+    }
+    callInput?.focus();
+  }
+
   function clear() {
     call = "";
     scp = null;

@@ -11,6 +11,8 @@
     dayBound,
     rangeTest,
     RIG_STATUS_EVENT,
+    CLUSTER_SPOT_EVENT,
+    CLUSTER_STATUS_EVENT,
     type CheckResult,
     type ContestDef,
     type DateRange,
@@ -22,6 +24,9 @@
     type QsoRow,
     type RigStatus,
     type Settings,
+    type ClusterConfig,
+    type ClusterStatus,
+    type Spot,
   } from "$lib/api";
   import EntryLine from "$lib/components/EntryLine.svelte";
   import LogTable from "$lib/components/LogTable.svelte";
@@ -44,6 +49,10 @@
   let view = $state<LogView | null>(null);
   let logVersion = $state(0);
   let rig = $state<RigStatus>({ connected: false, freq_hz: null, band: null, mode: null, rig_mode: null, error: null });
+  let clusterStatus = $state<ClusterStatus>({ connected: false, node: "", error: null });
+  /** Recent DX cluster spots, oldest first. */
+  let spots = $state<Spot[]>([]);
+  const KEEP_SPOTS = 500;
   let version = $state("");
   let notice = $state("");
   let noticeIsError = $state(false);
@@ -88,6 +97,10 @@
 
   onMount(() => {
     const unlisten = listen<RigStatus>(RIG_STATUS_EVENT, (e) => (rig = e.payload));
+    const unlistenSpots = listen<Spot>(CLUSTER_SPOT_EVENT, (e) => {
+      spots = [...spots.slice(-(KEEP_SPOTS - 1)), e.payload];
+    });
+    const unlistenCluster = listen<ClusterStatus>(CLUSTER_STATUS_EVENT, (e) => (clusterStatus = e.payload));
     (async () => {
       try {
         const list = await api.listContests();
@@ -96,6 +109,8 @@
         settings = await api.getSettings();
         version = await api.appVersion();
         rig = await api.rigStatus();
+        clusterStatus = await api.clusterStatus();
+        spots = await api.clusterSpots();
         const current = await api.getLog();
         if (current) {
           setView(current);
@@ -114,6 +129,8 @@
     })();
     return () => {
       unlisten.then((f) => f());
+      unlistenSpots.then((f) => f());
+      unlistenCluster.then((f) => f());
     };
   });
 
@@ -322,11 +339,13 @@
     }
   }
 
-  async function saveLookups(qrz: QrzConfig) {
+  async function saveLookups(qrz: QrzConfig, cluster: ClusterConfig) {
     if (!settings) return;
     try {
       settings.qrz = qrz;
+      settings.cluster = cluster;
       await api.saveSettings($state.snapshot(settings) as Settings);
+      clusterStatus = await api.clusterConnect(cluster);
       lookupDialog = false;
       refocus();
     } catch (e) {
@@ -433,7 +452,15 @@
           />
         </div>
       </div>
-      <ScorePanel {view} {check} rows={rangeRows} {range} />
+      <ScorePanel
+        {view}
+        {check}
+        rows={rangeRows}
+        {range}
+        {spots}
+        {clusterStatus}
+        onspot={(s) => entry?.useSpot(s.call, s.band, s.comment)}
+      />
     </main>
   {:else}
     <section class="welcome">
@@ -494,6 +521,8 @@
 {#if lookupDialog && settings}
   <LookupDialog
     initial={settings.qrz}
+    initialCluster={settings.cluster}
+    stationCall={settings.station.callsign}
     onsave={saveLookups}
     onctychange={async () => {
       const v = await api.getLog();

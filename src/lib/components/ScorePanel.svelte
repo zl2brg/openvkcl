@@ -7,10 +7,13 @@
     modeClass,
     zoneLabel,
     type CheckResult,
+    type ClusterStatus,
     type DateRange,
     type LogView,
     type QsoRow,
+    type Spot,
   } from "$lib/api";
+  import ClusterPanel from "./ClusterPanel.svelte";
   import ContestTiming from "./ContestTiming.svelte";
 
   let {
@@ -18,12 +21,19 @@
     check,
     rows,
     range,
+    spots,
+    clusterStatus,
+    onspot,
   }: {
     view: LogView;
     check: CheckResult | null;
     /** In general logs, the contacts within `range`. */
     rows: QsoRow[];
     range: DateRange;
+    /** DX cluster spots and connection, shown in general logs. */
+    spots: Spot[];
+    clusterStatus: ClusterStatus;
+    onspot: (spot: Spot) => void;
   } = $props();
 
   let general = $derived(view.contest.general);
@@ -130,6 +140,7 @@
         </table>
       </section>
     {/if}
+    <ClusterPanel {spots} status={clusterStatus} qsos={view.qsos} {onspot} />
   {:else}
     <section>
       <h3>Score</h3>

@@ -3,22 +3,28 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Modal from "./Modal.svelte";
-  import { api, dateTimeText, errorText, zoneLabel, type CtyStatus, type QrzConfig, type ScpStatus } from "$lib/api";
+  import { api, dateTimeText, errorText, zoneLabel, type ClusterConfig, type CtyStatus, type QrzConfig, type ScpStatus } from "$lib/api";
 
   let {
     initial,
+    initialCluster,
+    stationCall,
     onsave,
     onctychange,
     onclose,
   }: {
     initial: QrzConfig;
-    onsave: (config: QrzConfig) => void;
+    initialCluster: ClusterConfig;
+    /** Logs in to the cluster when no cluster callsign is set. */
+    stationCall: string;
+    onsave: (qrz: QrzConfig, cluster: ClusterConfig) => void;
     /** A new country file was loaded. */
     onctychange?: () => void;
     onclose: () => void;
   } = $props();
 
   let qrz = $state<QrzConfig>(untrack(() => $state.snapshot(initial)) as QrzConfig);
+  let cluster = $state<ClusterConfig>(untrack(() => $state.snapshot(initialCluster)) as ClusterConfig);
   let scp = $state<ScpStatus | null>(null);
   let scpBusy = $state(false);
   let scpMessage = $state("");
@@ -198,11 +204,40 @@
       Name, location and grid need a QRZ.com XML Logbook Data subscription; free accounts get name and country.
       Your password is stored in OpenVKCL's settings file on this computer.
     </p>
+
+    <h3>DX cluster</h3>
+    <label class="check">
+      <input type="checkbox" bind:checked={cluster.enabled} />
+      Show spots of countries I still need, in general logs
+    </label>
+    <div class="row">
+      <label class="host">Cluster <input bind:value={cluster.host} autocomplete="off" spellcheck="false" /></label>
+      <label class="port">Port <input type="number" bind:value={cluster.port} min="1" max="65535" /></label>
+      <label>
+        Login callsign
+        <input
+          class="mono"
+          bind:value={cluster.callsign}
+          oninput={() => (cluster.callsign = cluster.callsign.toUpperCase())}
+          placeholder={stationCall}
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </label>
+    </div>
+    <p class="hint">
+      Most clusters allow one login per callsign. If another program is already connected as {stationCall || "you"},
+      add a number, e.g. {stationCall ? `${stationCall}-1` : "VK2ABC-1"}. The default is the WA9PIE network
+      (hrd.wa9pie.net, port 8000).
+    </p>
   </div>
 
   {#snippet footer()}
     <button onclick={onclose}>Cancel</button>
-    <button class="primary" onclick={() => onsave($state.snapshot(qrz) as QrzConfig)}>Save</button>
+    <button
+      class="primary"
+      onclick={() => onsave($state.snapshot(qrz) as QrzConfig, $state.snapshot(cluster) as ClusterConfig)}>Save</button
+    >
   {/snippet}
 </Modal>
 
@@ -234,6 +269,12 @@
   }
   .row label {
     flex: 1;
+  }
+  .row label.host {
+    flex: 2;
+  }
+  .row label.port {
+    flex: 0 0 6em;
   }
   .hint {
     font-size: 0.8rem;

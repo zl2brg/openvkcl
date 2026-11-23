@@ -1,5 +1,6 @@
 mod bands;
 mod callsign;
+mod cluster;
 mod commands;
 mod contest;
 mod dxcc;
@@ -31,6 +32,11 @@ pub fn run() {
             let rig = state.settings.lock().unwrap().rig.clone();
             app.manage(state);
             app.state::<AppState>().rig.start(app.handle().clone(), rig);
+            let (cluster, login) = {
+                let s = app.state::<AppState>().settings.lock().unwrap().clone();
+                (s.cluster.clone(), commands::cluster_login(&s))
+            };
+            app.state::<AppState>().cluster.start(app.handle().clone(), cluster, login);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -66,6 +72,9 @@ pub fn run() {
             commands::cty_import,
             commands::qrz_test,
             commands::qrz_lookup,
+            commands::cluster_connect,
+            commands::cluster_status,
+            commands::cluster_spots,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

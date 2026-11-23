@@ -35,6 +35,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   changes again, and opening an existing log leaves its saved choice alone.
 - A warning when a contact's time is more than a minute ahead of the clock,
   on the entry line when **Enter time** is ticked and when editing a contact.
+- A DX cluster tile under **By band** in general logs. It only shows spots
+  of DXCC countries not yet in the log, or optionally countries new on the
+  spotted band, from a chosen time frame of 10 minutes to 2 hours. Clicking
+  a spot fills in the call, band and mode. It connects to the WA9PIE network
+  (hrd.wa9pie.net:8000) with your callsign by default; the cluster, port and
+  login callsign are under **Lookups…**.
 
 ### Changed
 

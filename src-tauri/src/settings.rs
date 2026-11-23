@@ -1,3 +1,4 @@
+use crate::cluster::ClusterConfig;
 use crate::model::Station;
 use crate::qrz::QrzConfig;
 use crate::rig::RigConfig;
@@ -12,6 +13,7 @@ pub struct Settings {
     pub station: Station,
     pub rig: RigConfig,
     pub qrz: QrzConfig,
+    pub cluster: ClusterConfig,
     pub last_log: Option<String>,
 }
 

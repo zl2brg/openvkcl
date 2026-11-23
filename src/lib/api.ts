@@ -338,8 +338,34 @@ export interface Settings {
   station: Station;
   rig: RigConfig;
   qrz: QrzConfig;
+  cluster: ClusterConfig;
   last_log: string | null;
 }
+
+export interface ClusterConfig {
+  enabled: boolean;
+  host: string;
+  port: number;
+  /** Login callsign; empty uses the station callsign. */
+  callsign: string;
+}
+
+export interface ClusterStatus {
+  connected: boolean;
+  /** "host:port", while enabled. */
+  node: string;
+  error: string | null;
+}
+
+/** A DX cluster spot, with the spotted station's country when it's known. */
+export type Spot = {
+  time: string;
+  freq_khz: number;
+  call: string;
+  spotter: string;
+  comment: string;
+  band: string | null;
+} & Partial<Country>;
 
 export interface ContestList {
   contests: ContestDef[];
@@ -394,9 +420,15 @@ export const api = {
   scpLookup: (partial: string) => invoke<ScpMatches>("scp_lookup", { partial }),
   qrzTest: (config: QrzConfig) => invoke<string>("qrz_test", { config }),
   qrzLookup: (call: string) => invoke<QrzInfo | null>("qrz_lookup", { call }),
+  /** Save the cluster settings and reconnect. */
+  clusterConnect: (config: ClusterConfig) => invoke<ClusterStatus>("cluster_connect", { config }),
+  clusterStatus: () => invoke<ClusterStatus>("cluster_status"),
+  clusterSpots: () => invoke<Spot[]>("cluster_spots"),
 };
 
 export const RIG_STATUS_EVENT = "rig-status";
+export const CLUSTER_SPOT_EVENT = "cluster-spot";
+export const CLUSTER_STATUS_EVENT = "cluster-status";
 
 export function emptyStation(): Station {
   return {

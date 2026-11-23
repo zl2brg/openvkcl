@@ -16,6 +16,7 @@
     highlight = "",
     range = $bindable({ from: "", to: "" }),
     onedit,
+    ondelete,
     ondone,
   }: {
     rows: QsoRow[];
@@ -25,6 +26,7 @@
     /** Dates to show the log between, in general logs. */
     range?: DateRange;
     onedit: (row: QsoRow) => void;
+    ondelete: (row: QsoRow) => void;
     /** Escape in an empty search box, to hand focus back. */
     ondone?: () => void;
   } = $props();
@@ -64,7 +66,47 @@
     limit = PAGE;
   });
 
+  /** The right-click menu: which contact, where, and whether Delete was clicked once. */
+  let menu = $state<{ row: QsoRow; x: number; y: number; confirming: boolean } | null>(null);
+  let menuEl: HTMLDivElement | undefined = $state();
+
+  function openMenu(e: MouseEvent, row: QsoRow) {
+    e.preventDefault();
+    // Keep it on screen near the window's right and bottom edges.
+    menu = { row, x: Math.min(e.clientX, innerWidth - 200), y: Math.min(e.clientY, innerHeight - 90), confirming: false };
+  }
+
+  function closeMenu() {
+    menu = null;
+  }
+
+  function menuEdit() {
+    const row = menu!.row;
+    closeMenu();
+    onedit(row);
+  }
+
+  /** The first click asks, the second deletes. */
+  function menuDelete() {
+    if (!menu!.confirming) {
+      menu!.confirming = true;
+      return;
+    }
+    const row = menu!.row;
+    closeMenu();
+    ondelete(row);
+  }
+
+  function onWindowPointerdown(e: PointerEvent) {
+    if (menu && !menuEl?.contains(e.target as Node)) closeMenu();
+  }
+
   function onWindowKeydown(e: KeyboardEvent) {
+    if (menu && e.key === "Escape") {
+      e.preventDefault();
+      closeMenu();
+      return;
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && !document.querySelector("[role=dialog]")) {
       e.preventDefault();
       searchBox.focus();
@@ -207,7 +249,13 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} bind:innerWidth={windowWidth} />
+<svelte:window
+  onkeydown={onWindowKeydown}
+  onpointerdown={onWindowPointerdown}
+  onblur={closeMenu}
+  onresize={closeMenu}
+  bind:innerWidth={windowWidth}
+/>
 
 <div class="log">
   <div class="search">
@@ -240,7 +288,7 @@
       <span class="count">{matching.length.toLocaleString()} of {rows.length.toLocaleString()}</span>
     {/if}
   </div>
-  <div class="wrap">
+  <div class="wrap" onscroll={closeMenu}>
     <table class:fit={general}>
       {#if general}
         <colgroup>
@@ -265,8 +313,10 @@
           <tr
             class:dim={r.dupe || !!r.invalid}
             class:hl={highlight && r.call === highlight}
+            class:menu-row={menu?.row.id === r.id}
             ondblclick={() => onedit(r)}
-            title="Double-click to edit"
+            oncontextmenu={(e) => openMenu(e, r)}
+            title="Double-click to edit · right-click for more"
           >
             <td class="num muted">{n}</td>
             {#if general}
@@ -334,6 +384,15 @@
     </table>
   </div>
 </div>
+
+{#if menu}
+  <div class="menu" role="menu" bind:this={menuEl} style:left="{menu.x}px" style:top="{menu.y}px">
+    <button role="menuitem" onclick={menuEdit}>Edit {menu.row.call}…</button>
+    <button role="menuitem" class="danger" class:confirming={menu.confirming} onclick={menuDelete}>
+      {menu.confirming ? `Delete ${menu.row.call}? Click to confirm` : `Delete ${menu.row.call}`}
+    </button>
+  </div>
+{/if}
 
 <style>
   .log {
@@ -434,7 +493,8 @@
     background: var(--hover);
     cursor: default;
   }
-  tr.hl td {
+  tr.hl td,
+  tr.menu-row td {
     background: var(--highlight);
   }
   tr.dim td {
@@ -486,5 +546,37 @@
     text-align: center;
     color: var(--muted);
     padding: 24px;
+  }
+  .menu {
+    position: fixed;
+    z-index: 20;
+    min-width: 190px;
+    display: flex;
+    flex-direction: column;
+    padding: 4px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgb(0 0 0 / 0.35);
+  }
+  .menu button {
+    all: unset;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .menu button:hover,
+  .menu button:focus-visible {
+    background: var(--hover);
+  }
+  .menu .danger {
+    color: var(--bad);
+  }
+  .menu .danger.confirming {
+    background: var(--bad);
+    color: var(--bg);
+    font-weight: 600;
   }
 </style>

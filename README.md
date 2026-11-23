@@ -90,8 +90,9 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
    RST sent is shown before RST received. In a contest, Space goes from the
    call to RST received, then the serial, number and locator. In a general log
    it goes call, RST sent, RST received, name, then comment. **Tab** does the
-   same (and also works in name and comment, where Space types a space);
-   **Shift+Tab** goes back. Both wrap round to the call.
+   same (and also works in name and comment, where Space types a space), but
+   stops on the **Log** button after the last field; **Shift+Tab** goes back.
+   Both wrap round to the call.
    Without a radio connected, **Alt+Up/Down** changes band and **Alt+Left/Right** changes mode.
    Tick **Enter time** to log a contact at a chosen time. A time more than a
    minute ahead is marked as in the future.

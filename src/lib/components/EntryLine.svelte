@@ -276,6 +276,15 @@
       const next = step(fieldOrder(), e.target as HTMLInputElement, 1);
       next.focus();
       next.select();
+    } else if (e.key === "Tab" && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      // Tab / Shift+Tab cycle the same fields as Space, including the text ones.
+      const fields = fieldOrder();
+      if (fields.includes(e.target as HTMLInputElement)) {
+        e.preventDefault();
+        const next = step(fields, e.target as HTMLInputElement, e.shiftKey ? -1 : 1);
+        next.focus();
+        next.select();
+      }
     } else if (e.altKey && !rigDriven && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
       band = step(contest.bands, band, e.key === "ArrowUp" ? 1 : -1);

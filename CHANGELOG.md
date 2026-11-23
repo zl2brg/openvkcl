@@ -67,3 +67,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   log it moves through call, RST sent, RST received, name and comment.
 - The header clock, contest timer and re-work countdowns keep their own
   timers, so the rest of the window is not redrawn every second.
+
+### Contributors
+
+Thanks to everyone who contributed to this release:
+
+- [@ezypezy22](https://github.com/ezypezy22) — general (DX) logging and ADIF import,
+  FlexRadio, DX cluster, log search/sort/countdowns, right-click edit/delete,
+  long-log performance, and log schema compatibility
+- [@hilaryb](https://github.com/hilaryb) — light/dark header toggle, and local
+  time zone only when a contest scores by local time
+- [@zl2brg](https://github.com/zl2brg) — releases, contest definitions, and
+  macOS Big Sur / build fixes
+

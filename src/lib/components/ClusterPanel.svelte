@@ -66,23 +66,47 @@
   let worked = $derived(new Set(qsos.flatMap((q) => (q.dxcc != null ? [q.dxcc] : []))));
   let workedBand = $derived(new Set(qsos.flatMap((q) => (q.dxcc != null ? [`${q.dxcc}|${q.band}`] : []))));
 
-  /** Needed spots, newest first: one per call and band. */
-  let wanted = $derived.by(() => {
-    const out: (Spot & { newCountry: boolean })[] = [];
+  let search = $state("");
+  let query = $derived(search.trim().toUpperCase());
+
+  /** Whether a spot is a new country, a country new on its band, or neither. */
+  function need(s: Spot): "country" | "band" | null {
+    if (s.dxcc == null) return null;
+    if (!worked.has(s.dxcc)) return "country";
+    return s.band && !workedBand.has(`${s.dxcc}|${s.band}`) ? "band" : null;
+  }
+
+  function matches(s: Spot): boolean {
+    return [s.call, s.country ?? "", s.band ?? "", s.comment].some((x) => x.toUpperCase().includes(query));
+  }
+
+  /**
+   * Newest first, one per call and band: the needed spots, or while searching,
+   * every spot that matches, needed or not.
+   */
+  let shown = $derived.by(() => {
+    const out: (Spot & { need: "country" | "band" | null })[] = [];
     const seen = new Set<string>();
     for (let i = spots.length - 1; i >= 0 && out.length < MAX_SHOWN; i--) {
       const s = spots[i];
-      if (s.dxcc == null || now - new Date(s.time).getTime() > minutes * 60_000) continue;
-      const newCountry = !worked.has(s.dxcc);
-      const newBand = !!s.band && !workedBand.has(`${s.dxcc}|${s.band}`);
-      if (!newCountry && !(filter === "band" && newBand)) continue;
+      if (now - new Date(s.time).getTime() > minutes * 60_000) continue;
+      const n = need(s);
+      if (query ? !matches(s) : !(n === "country" || (filter === "band" && n === "band"))) continue;
       const key = `${s.call}|${s.band}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      out.push({ ...s, newCountry });
+      out.push({ ...s, need: n });
     }
     return out;
   });
+
+  function onSearchKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape" && search) {
+      e.preventDefault();
+      e.stopPropagation();
+      search = "";
+    }
+  }
 
   let unknownCountries = $derived(spots.length > 0 && spots.every((s) => s.dxcc == null));
 </script>
@@ -91,7 +115,11 @@
   <div class="head">
     <h3>DX cluster</h3>
     <span class="dot" class:on={status.connected} title={status.error ?? status.node}></span>
-    {#if wanted.length}<span class="count" title="Needed spots in this time frame">{wanted.length}{wanted.length === MAX_SHOWN ? "+" : ""}</span>{/if}
+    {#if shown.length}
+      <span class="count" title={query ? "Spots matching the search" : "Needed spots in this time frame"}
+        >{shown.length}{shown.length === MAX_SHOWN ? "+" : ""}</span
+      >
+    {/if}
   </div>
   <div class="options">
     <select bind:value={filter} aria-label="Which spots to show">
@@ -104,6 +132,17 @@
       {/each}
     </select>
   </div>
+  <input
+    type="search"
+    class="search"
+    bind:value={search}
+    onkeydown={onSearchKeydown}
+    placeholder="Search spots: call, country, band…"
+    aria-label="Search all spots in this time frame"
+    title="Searches every spot in the time frame, worked or not. Esc clears."
+    spellcheck="false"
+    autocomplete="off"
+  />
 
   {#if !status.node}
     <p class="muted">Off. Turn it on under Lookups…</p>
@@ -111,15 +150,17 @@
     <p class="bad">{status.error}</p>
   {:else if !status.connected}
     <p class="muted">Connecting to {status.node}…</p>
-  {:else if unknownCountries}
+  {:else if unknownCountries && !query}
     <p class="muted">Countries unknown: download the country file under Lookups…</p>
-  {:else if !wanted.length}
+  {:else if query && !shown.length}
+    <p class="muted">No spots match “{search.trim()}” in the last {frameText}.</p>
+  {:else if !shown.length}
     <p class="muted">No spots of {filter === "band" ? "new countries or bands" : "new countries"} in the last {frameText}.</p>
   {/if}
 
-  {#if wanted.length}
+  {#if shown.length}
     <ul>
-      {#each wanted as s (`${s.call}|${s.band}`)}
+      {#each shown as s (`${s.call}|${s.band}`)}
         <li>
           <button
             onclick={() => onspot(s)}
@@ -128,7 +169,11 @@
             <span class="mono freq">{s.freq_khz.toFixed(1)}</span>
             <span class="mono call">{s.call}</span>
             <span class="country">{s.country}</span>
-            <span class="tag" class:band={!s.newCountry}>{s.newCountry ? "NEW" : s.band}</span>
+            {#if s.need}
+              <span class="tag" class:band={s.need === "band"}>{s.need === "country" ? "NEW" : s.band}</span>
+            {:else}
+              <span class="worked" title="Worked on {s.band}">{s.band ?? ""}</span>
+            {/if}
           </button>
         </li>
       {/each}
@@ -242,5 +287,14 @@
   .tag.band {
     border-color: var(--warn);
     color: var(--warn);
+  }
+  .worked {
+    padding: 0 6px;
+    font-size: 0.7rem;
+    color: var(--muted);
+  }
+  .search {
+    font-size: 0.8rem;
+    padding: 3px 6px;
   }
 </style>

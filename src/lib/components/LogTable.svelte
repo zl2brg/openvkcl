@@ -1,20 +1,29 @@
 <script lang="ts">
-  import { countdownText, hhmm, zoneLabel, type ContestDef, type QsoRow } from "$lib/api";
+  import {
+    dateText,
+    hhmm,
+    rangeTest,
+    zoneLabel,
+    type ContestDef,
+    type DateRange,
+    type QsoRow,
+  } from "$lib/api";
+  import Countdown from "./Countdown.svelte";
 
   let {
     rows,
     contest,
     highlight = "",
-    now,
+    range = $bindable({ from: "", to: "" }),
     onedit,
     ondone,
   }: {
     rows: QsoRow[];
     contest: ContestDef;
-    /** Ticks every second to drive the re-work countdowns. */
-    now: Date;
     /** Rows with this call are highlighted. */
     highlight?: string;
+    /** Dates to show the log between, in general logs. */
+    range?: DateRange;
     onedit: (row: QsoRow) => void;
     /** Escape in an empty search box, to hand focus back. */
     ondone?: () => void;
@@ -24,13 +33,36 @@
   let hasExch = $derived(contest.exchange.includes("number"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let hasRework = $derived(contest.rework.kind !== "never");
+  let general = $derived(contest.general);
   let newestFirst = $derived(rows.map((r, i) => ({ r, n: i + 1 })).reverse());
 
   let search = $state("");
   let searchBox: HTMLInputElement;
   let query = $derived(search.trim().toUpperCase());
+  let dated = $derived(general && !!(range.from || range.to));
+
+  /** A general log also finds countries and names, e.g. "japan". */
+  function matches(r: QsoRow): boolean {
+    if (r.call.toUpperCase().includes(query)) return true;
+    return general && [r.country ?? "", r.name].some((x) => x.toUpperCase().includes(query));
+  }
+
   // Numbered before filtering, so a match keeps its place in the log.
-  let matching = $derived(query ? newestFirst.filter(({ r }) => r.call.toUpperCase().includes(query)) : newestFirst);
+  let matching = $derived.by(() => {
+    const inRange = dated ? rangeTest(range) : null;
+    return newestFirst.filter(({ r }) => (!query || matches(r)) && (!inRange || inRange(r.time)));
+  });
+
+  // Long logs show a page at a time: thousands of rows make the table slow.
+  const PAGE = 500;
+  let limit = $state(PAGE);
+  $effect(() => {
+    query;
+    range.from;
+    range.to;
+    sort;
+    limit = PAGE;
+  });
 
   function onWindowKeydown(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && !document.querySelector("[role=dialog]")) {
@@ -53,14 +85,17 @@
     key: string;
     label: string;
     num?: boolean;
+    /** Fixed width, in general logs; columns without one share what's left. */
+    width?: string;
+    /** Left out in narrow windows. */
+    optional?: boolean;
     /** What the column sorts by; null (no value) always sorts last. */
     value: (r: QsoRow, n: number) => SortValue;
   }
 
-  /** When a running countdown ends, or null when there is none. */
+  /** Absolute re-work time for sorting; each cell owns its own countdown tick. */
   function reworkMs(r: QsoRow): number | null {
-    const t = r.rework_at ? new Date(r.rework_at).getTime() : NaN;
-    return t > now.getTime() ? t : null;
+    return r.rework_at ? new Date(r.rework_at).getTime() : null;
   }
 
   const text = (s: string) => s.trim() || null;
@@ -72,9 +107,29 @@
     return i < 0 ? text(band) : i;
   }
 
-  let columns = $derived<Column[]>([
+  function countryTitle(r: QsoRow): string {
+    if (!r.country) return "";
+    const zones = [r.cont, r.cqz ? `CQ ${r.cqz}` : "", r.ituz ? `ITU ${r.ituz}` : ""].filter(Boolean).join(" · ");
+    return `${r.country} (DXCC ${r.dxcc})${zones ? ` · ${zones}` : ""}`;
+  }
+
+  let timeLabel = $derived(zoneLabel() === "UTC" ? "UTC" : "Local");
+  let generalColumns = $derived<Column[]>([
+    { key: "n", label: "#", num: true, width: "4.2rem", value: (_, n) => n },
+    { key: "time", label: timeLabel, width: "10rem", value: (r) => new Date(r.time).getTime() },
+    { key: "band", label: "Band", width: "4.4rem", value: (r) => bandIndex(r.band) },
+    { key: "mode", label: "Mode", width: "4.6rem", value: (r) => text(r.mode) },
+    { key: "call", label: "Call", width: "7rem", value: (r) => text(r.call) },
+    { key: "country", label: "Country", value: (r) => text(r.country ?? "") },
+    { key: "sent", label: "Sent", width: "4.4rem", value: (r) => text(r.sent_rst) },
+    { key: "rcvd", label: "Rcvd", width: "4.4rem", value: (r) => text(r.rcvd_rst) },
+    { key: "name", label: "Name", value: (r) => text(r.name) },
+    { key: "comment", label: "Comment", optional: true, value: (r) => text(r.comment) },
+  ]);
+
+  let contestColumns = $derived<Column[]>([
     { key: "n", label: "#", num: true, value: (_, n) => n },
-    { key: "time", label: zoneLabel() === "UTC" ? "UTC" : "Local", value: (r) => new Date(r.time).getTime() },
+    { key: "time", label: timeLabel, value: (r) => new Date(r.time).getTime() },
     // In the contest's band order (160m before 80m), not alphabetical.
     { key: "band", label: "Band", value: (r) => bandIndex(r.band) },
     { key: "mode", label: "Mode", value: (r) => text(r.mode) },
@@ -86,6 +141,13 @@
     { key: "pts", label: "Pts", num: true, value: (r) => r.points },
     { key: "status", label: "Status", value: (r) => text(status(r).text) },
   ]);
+  // Below this window width the Comment column is left out, so Country and Name keep room.
+  const WIDE = 1250;
+  let windowWidth = $state(WIDE);
+  let showComment = $derived(windowWidth >= WIDE);
+  let columns = $derived(
+    general ? generalColumns.filter((c) => !c.optional || showComment) : contestColumns,
+  );
 
   /** The sorted column and direction; null keeps the log's newest-first order. */
   let sort = $state<{ key: string; dir: 1 | -1 } | null>(null);
@@ -145,7 +207,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onWindowKeydown} />
+<svelte:window onkeydown={onWindowKeydown} bind:innerWidth={windowWidth} />
 
 <div class="log">
   <div class="search">
@@ -156,17 +218,35 @@
       class="mono"
       type="search"
       placeholder="Search log"
-      aria-label="Search the log by callsign"
-      title="Find a callsign in the log (Ctrl+F / ⌘F). Esc clears."
+      aria-label={general ? "Search the log by callsign, country or name" : "Search the log by callsign"}
+      title="Find a {general ? 'callsign, country or name' : 'callsign'} in the log (Ctrl+F / ⌘F). Esc clears."
       spellcheck="false"
       autocomplete="off"
     />
-    {#if query}
-      <span class="count">{matching.length} of {rows.length}</span>
+    {#if general}
+      <label class="date">
+        From
+        <input type="date" bind:value={range.from} max={range.to || undefined} title="Show contacts from this date ({zoneLabel()})" />
+      </label>
+      <label class="date">
+        To
+        <input type="date" bind:value={range.to} min={range.from || undefined} title="Show contacts up to this date ({zoneLabel()})" />
+      </label>
+      {#if dated}
+        <button class="clear" onclick={() => (range = { from: "", to: "" })} title="Show all dates">Clear dates</button>
+      {/if}
+    {/if}
+    {#if query || dated}
+      <span class="count">{matching.length.toLocaleString()} of {rows.length.toLocaleString()}</span>
     {/if}
   </div>
   <div class="wrap">
-    <table>
+    <table class:fit={general}>
+      {#if general}
+        <colgroup>
+          {#each columns as c (c.key)}<col style:width={c.width} />{/each}
+        </colgroup>
+      {/if}
       <thead>
         <tr>
           {#each columns as c (c.key)}
@@ -180,7 +260,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each shown as { r, n } (r.id)}
+        {#each shown.slice(0, limit) as { r, n } (r.id)}
           {@const s = status(r)}
           <tr
             class:dim={r.dupe || !!r.invalid}
@@ -189,43 +269,67 @@
             title="Double-click to edit"
           >
             <td class="num muted">{n}</td>
-            <td class="mono">{hhmm(r.time)}</td>
-            <td>{r.band}</td>
-            <td>{r.mode}</td>
-            <td class="mono call">{r.call}</td>
-            {#if hasRework}
-              <td>
-                {#if r.rework_at}
-                  {@const left = countdownText(r.rework_at, now)}
-                  {#if left}<span class="rework" title={reworkTitle(r)}>⏱ {left}</span>{/if}
-                {/if}
+            {#if general}
+              <td class="mono">{dateText(r.time)} {hhmm(r.time)}</td>
+              <td>{r.band}</td>
+              <td title={r.mode}>{r.mode}</td>
+              <td class="mono call" title={r.call}>{r.call}</td>
+              <td title={countryTitle(r)}>
+                {#if r.new_dxcc}<span class="new" title="First contact with {r.country}">NEW</span>{/if}{r.country ?? ""}
               </td>
+              <td class="mono">{r.sent_rst}</td>
+              <td class="mono">{r.rcvd_rst}</td>
+              <td title={r.name}>{r.name}</td>
+              {#if showComment}<td class="muted" title={r.comment}>{r.comment}</td>{/if}
+            {:else}
+              <td class="mono">{hhmm(r.time)}</td>
+              <td>{r.band}</td>
+              <td>{r.mode}</td>
+              <td class="mono call">{r.call}</td>
+              {#if hasRework}
+                <td>
+                  {#if r.rework_at}
+                    <Countdown at={r.rework_at} title={reworkTitle(r)} />
+                  {/if}
+                </td>
+              {/if}
+              <td class="mono">
+                {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasExch ? ` ${r.sent_exch}` : ""}{hasLoc
+                  ? ` ${r.sent_locator}`
+                  : ""}
+              </td>
+              <td class="mono">
+                {r.rcvd_rst}{hasNr ? ` ${r.rcvd_nr}` : ""}{hasExch ? ` ${r.rcvd_exch}` : ""}{hasLoc
+                  ? ` ${r.rcvd_locator}`
+                  : ""}
+              </td>
+              {#if hasLoc}<td class="num">{r.distance_km != null ? r.distance_km.toFixed(0) : ""}</td>{/if}
+              <td class="num">{points(r.points)}</td>
+              <td class={s.cls} title={s.title}>{s.text}</td>
             {/if}
-            <td class="mono">
-              {r.sent_rst}{hasNr ? ` ${r.sent_nr}` : ""}{hasExch ? ` ${r.sent_exch}` : ""}{hasLoc
-                ? ` ${r.sent_locator}`
-                : ""}
-            </td>
-            <td class="mono">
-              {r.rcvd_rst}{hasNr ? ` ${r.rcvd_nr}` : ""}{hasExch ? ` ${r.rcvd_exch}` : ""}{hasLoc
-                ? ` ${r.rcvd_locator}`
-                : ""}
-            </td>
-            {#if hasLoc}<td class="num">{r.distance_km != null ? r.distance_km.toFixed(0) : ""}</td>{/if}
-            <td class="num">{points(r.points)}</td>
-            <td class={s.cls} title={s.title}>{s.text}</td>
           </tr>
         {:else}
           <tr>
             <td colspan={columns.length} class="empty">
               {#if query && rows.length}
-                No contacts match “{query}”.
+                No contacts match “{query}”{dated ? " between those dates" : ""}.
+              {:else if dated && rows.length}
+                No contacts between those dates.
               {:else}
                 No contacts yet. Type a callsign above and press Enter.
               {/if}
             </td>
           </tr>
         {/each}
+        {#if shown.length > limit}
+          <tr>
+            <td colspan={columns.length} class="more">
+              Showing {limit.toLocaleString()} of {shown.length.toLocaleString()} contacts.
+              <button onclick={() => (limit += PAGE)}>Show {PAGE} more</button>
+              <button onclick={() => (limit = shown.length)}>Show all</button>
+            </td>
+          </tr>
+        {/if}
       </tbody>
     </table>
   </div>
@@ -253,6 +357,48 @@
   .count {
     font-size: 0.85rem;
     color: var(--muted);
+  }
+  .date {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    color: var(--muted);
+  }
+  .clear {
+    font-size: 0.85rem;
+    padding: 3px 8px;
+  }
+  /* General logs: fixed column widths so the table always fits, long text cut short. */
+  table.fit {
+    table-layout: fixed;
+  }
+  table.fit th,
+  table.fit td {
+    padding-left: 6px;
+    padding-right: 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  table.fit td.more {
+    white-space: normal;
+  }
+  .new {
+    margin-right: 6px;
+    padding: 0 5px;
+    border: 1px solid var(--accent);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+  .more {
+    text-align: center;
+    color: var(--muted);
+    padding: 10px;
+  }
+  .more button {
+    margin-left: 8px;
   }
   .wrap {
     overflow: auto;
@@ -322,17 +468,6 @@
   }
   th[aria-sort="none"] .arrow {
     opacity: 0.4;
-  }
-  .rework {
-    display: inline-block;
-    min-width: 6.5em;
-    text-align: center;
-    padding: 1px 7px;
-    border: 1px solid var(--warn);
-    border-radius: 10px;
-    color: var(--warn);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
   }
   .muted {
     color: var(--muted);

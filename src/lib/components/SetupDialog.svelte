@@ -26,6 +26,9 @@
   let error = $state("");
 
   let contest = $derived(contests.find((c) => c.id === setup.contest_id));
+  let general = $derived(!!contest?.general);
+  // General logging first, then the contests.
+  let choices = $derived([...contests].sort((a, b) => Number(b.general) - Number(a.general)));
   let bandBonuses = $derived(contest?.scoring.bonus.filter((b) => b.per_band) ?? []);
 
   /** Bands ticked for a per-band bonus. Without a list (older logs) the category claims every band. */
@@ -38,12 +41,48 @@
     setup.bonus_bands[b.category] = on ? [...bands, band] : bands;
   }
 
-  const offsets = Array.from({ length: 53 }, (_, i) => (i - 24) * 30);
+  /** The local-time points rule, if this contest has one (only RD at present). The offset is used for nothing else. */
+  let localTime = $derived(contest?.scoring.points.local_time ?? null);
+
+  /** Where each offset is used, for the VK/ZL region. Daylight-saving offsets are listed separately. */
+  const places: Record<number, string> = {
+    0: "UTC",
+    480: "WA (AWST)",
+    525: "Eucla",
+    570: "SA, NT (ACST)",
+    600: "QLD, NSW, VIC, TAS, ACT (AEST)",
+    630: "SA (ACDT), Lord Howe Is.",
+    660: "NSW, VIC, TAS, ACT (AEDT), Lord Howe Is. (summer)",
+    690: "Norfolk Is.",
+    720: "New Zealand (NZST), Norfolk Is. (summer)",
+    765: "Chatham Is.",
+    780: "New Zealand (NZDT)",
+    825: "Chatham Is. (summer)",
+  };
+  // Half-hour steps from UTC-12 to UTC+14, plus the region's 45-minute zones and the log's own value.
+  let offsets = $derived(
+    [
+      ...new Set([...Array.from({ length: 53 }, (_, i) => (i - 24) * 30), 525, 765, 825, setup.utc_offset_minutes]),
+    ].sort((a, b) => a - b),
+  );
   function offsetLabel(m: number) {
     const sign = m < 0 ? "-" : "+";
     const a = Math.abs(m);
-    return `UTC${sign}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+    const utc = `UTC${sign}${pad(Math.floor(a / 60))}:${pad(a % 60)}`;
+    return places[m] ? `${utc} — ${places[m]}` : utc;
   }
+
+  /**
+   * For a new log, default to this computer's UTC offset at the contest start rather than today's, so a log set up
+   * in summer for a winter contest gets standard time. Stops once the operator picks an offset themselves.
+   */
+  let offsetChosen = false;
+  function defaultOffset() {
+    if (!isNew || offsetChosen) return;
+    const start = new Date(`${startDate}T${startTime}:00Z`);
+    if (!isNaN(start.getTime())) setup.utc_offset_minutes = -start.getTimezoneOffset();
+  }
+  defaultOffset();
 
   function contestChanged() {
     const c = contests.find((x) => x.id === setup.contest_id);
@@ -52,11 +91,29 @@
     setup.serial_per_band = c.serial_per_band;
     setup.categories = Object.fromEntries(c.categories.map((f) => [f.key, f.default]));
     setup.bonus_bands = {};
+    defaultOffset();
+  }
+
+  /** The contest restarts serials at 001 on each band for this category choice. */
+  function wantsSeparateSerials(): boolean {
+    const when = contest?.serial_per_band_when;
+    const op = setup.categories["CATEGORY-OPERATOR"];
+    const tx = setup.categories["CATEGORY-TRANSMITTER"];
+    if (when === "multi_op") return op === "MULTI-OP";
+    if (when === "multi_tx") return op === "MULTI-OP" && (tx === "TWO" || tx === "UNLIMITED");
+    return false;
+  }
+
+  /** Follow the contest rule when the operator or transmitter category changes. A manual tick stays until then. */
+  function applySerialRule() {
+    if (!contest || contest.serial_per_band) return;
+    setup.serial_per_band = wantsSeparateSerials();
   }
 
   function save() {
     error = "";
-    const start = new Date(`${startDate}T${startTime}:00Z`);
+    // A general log has no contest period; its start is just when it was created.
+    const start = general && isNew ? new Date() : new Date(`${startDate}T${startTime}:00Z`);
     if (isNaN(start.getTime())) {
       error = "Enter a valid start date and time.";
       return;
@@ -83,41 +140,53 @@
   }
 </script>
 
-<Modal title={isNew ? "New contest log" : "Contest setup"} {onclose} wide>
+<Modal title={isNew ? "New log" : general ? "Log setup" : "Contest setup"} {onclose} wide>
   <div class="grid">
     <section>
-      <h3>Contest</h3>
+      <h3>{general ? "Log" : "Contest"}</h3>
       <label>
-        Contest
+        Log type
         <select bind:value={setup.contest_id} onchange={contestChanged} disabled={!isNew}>
-          {#each contests as c (c.id)}
+          {#each choices as c (c.id)}
             <option value={c.id}>{c.name}</option>
           {/each}
         </select>
       </label>
-      {#if contest?.rules_url}
+      {#if general}
+        <p class="hint">
+          For everyday operating and chasing DX: no contest period, scoring or dupes. Shows each station's country and
+          whether it's a new one for you. Import your existing log with Import ADIF once it's created.
+        </p>
+      {:else if contest?.rules_url}
         <p class="hint">Rules: {contest.rules_url}</p>
       {/if}
-      <div class="row">
-        <label>
-          Start date (UTC)
-          <input type="date" bind:value={startDate} />
-        </label>
-        <label>
-          Start time (UTC)
-          <input type="time" bind:value={startTime} />
-        </label>
-      </div>
-      <label>
-        Your local time zone
-        <select bind:value={setup.utc_offset_minutes}>
-          {#each offsets as o (o)}
-            <option value={o}>{offsetLabel(o)}</option>
-          {/each}
-        </select>
-      </label>
+      {#if !general}
+        <div class="row">
+          <label>
+            Start date (UTC)
+            <input type="date" bind:value={startDate} onchange={defaultOffset} />
+          </label>
+          <label>
+            Start time (UTC)
+            <input type="time" bind:value={startTime} onchange={defaultOffset} />
+          </label>
+        </div>
+        {#if localTime}
+          <label>
+            Your local time zone during the contest
+            <select bind:value={setup.utc_offset_minutes} onchange={() => (offsetChosen = true)}>
+              {#each offsets as o (o)}
+                <option value={o}>{offsetLabel(o)}</option>
+              {/each}
+            </select>
+          </label>
+          <p class="hint">
+            Contacts from {localTime.from} to {localTime.to} your local time score ×{localTime.factor}.
+          </p>
+        {/if}
+      {/if}
 
-      <h3>Exchange</h3>
+      <h3>{general ? "Station" : "Exchange"}</h3>
       <div class="row">
         <label>
           Callsign
@@ -141,13 +210,28 @@
           <input type="checkbox" bind:checked={setup.serial_per_band} />
           Separate serial numbers on each band
         </label>
+        {#if wantsSeparateSerials()}
+          <p class="hint">
+            {contest?.serial_per_band_when === "multi_tx"
+              ? "Multi-transmitter stations start serial numbers at 001 on each band."
+              : "Multi-operator stations start serial numbers at 001 on each band."}
+          </p>
+        {/if}
       {/if}
 
-      <h3>Categories</h3>
+      {#if contest?.categories.length}<h3>Categories</h3>{/if}
       {#each contest?.categories ?? [] as cat (cat.key)}
         <label class:plain={!!cat.label}>
           {cat.label || cat.key.replace("CATEGORY-", "").toLowerCase()}
-          <select bind:value={setup.categories[cat.key]}>
+          <select
+            bind:value={setup.categories[cat.key]}
+            onchange={(e) => {
+              if (cat.key === "CATEGORY-OPERATOR" || cat.key === "CATEGORY-TRANSMITTER") {
+                setup.categories[cat.key] = e.currentTarget.value;
+                applySerialRule();
+              }
+            }}
+          >
             {#each cat.options as opt (opt)}
               <option value={opt}>{opt || "(none)"}</option>
             {/each}
@@ -157,8 +241,10 @@
     </section>
 
     <section>
-      <h3>Station details (Cabrillo header)</h3>
-      <label>Operators <input class="mono" bind:value={setup.station.operators} placeholder="VK3ABC VK3XYZ" /></label>
+      <h3>{general ? "Station details" : "Station details (Cabrillo header)"}</h3>
+      {#if !general}
+        <label>Operators <input class="mono" bind:value={setup.station.operators} placeholder="VK3ABC VK3XYZ" /></label>
+      {/if}
       <label>Name <input bind:value={setup.station.name} /></label>
       <label>Email <input type="email" bind:value={setup.station.email} /></label>
       <label>Club <input bind:value={setup.station.club} /></label>
@@ -171,8 +257,10 @@
         <label>Postcode <input bind:value={setup.station.postcode} /></label>
         <label>Country <input bind:value={setup.station.country} /></label>
       </div>
-      <label>Location <input bind:value={setup.location} placeholder="e.g. VIC" /></label>
-      <label>Soapbox <textarea rows="3" bind:value={setup.soapbox}></textarea></label>
+      {#if !general}
+        <label>Location <input bind:value={setup.location} placeholder="e.g. VIC" /></label>
+        <label>Soapbox <textarea rows="3" bind:value={setup.soapbox}></textarea></label>
+      {/if}
       {#each bandBonuses as b (b.category)}
         <div class="bands">
           {b.label || `${b.value} x${b.factor} on`}

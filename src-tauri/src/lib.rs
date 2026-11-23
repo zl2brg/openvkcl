@@ -2,9 +2,12 @@ mod bands;
 mod callsign;
 mod commands;
 mod contest;
+mod dxcc;
 mod export;
 mod geo;
+mod import;
 mod model;
+mod modes;
 mod qrz;
 mod rig;
 mod scp;
@@ -46,6 +49,7 @@ pub fn run() {
             commands::cabrillo_text,
             commands::export_cabrillo,
             commands::export_adif,
+            commands::import_adif,
             commands::export_score_sheet,
             commands::rig_connect,
             commands::rig_disconnect,
@@ -58,6 +62,9 @@ pub fn run() {
             commands::scp_download,
             commands::scp_import,
             commands::scp_lookup,
+            commands::cty_status,
+            commands::cty_download,
+            commands::cty_import,
             commands::qrz_test,
             commands::qrz_lookup,
         ])

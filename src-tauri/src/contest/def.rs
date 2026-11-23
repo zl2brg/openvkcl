@@ -7,6 +7,9 @@ use std::collections::BTreeMap;
 pub struct ContestDef {
     pub id: String,
     pub name: String,
+    /// A general log for everyday and DX operating: no contest period, scoring or dupes.
+    #[serde(default)]
+    pub general: bool,
     pub cabrillo_name: String,
     #[serde(default)]
     pub rules_url: String,
@@ -27,8 +30,13 @@ pub struct ContestDef {
     #[serde(default)]
     pub number_from: Vec<String>,
     /// New logs default to a separate serial number series on each band.
+    /// When true the setup dialog has no checkbox: every log uses one series per band.
     #[serde(default)]
     pub serial_per_band: bool,
+    /// When the chosen categories match, the setup dialog ticks separate serials per band.
+    /// Off unless a contest's rules restart the serial for some multi-operator entries.
+    #[serde(default)]
+    pub serial_per_band_when: SerialPerBandWhen,
     /// Prefixes (e.g. "VK", "ZL") of stations that may be worked. Empty means anyone.
     #[serde(default)]
     pub workable: Vec<String>,
@@ -51,6 +59,19 @@ pub struct ContestDef {
 
 fn default_number_label() -> String {
     "Nr".into()
+}
+
+/// Which category choices should tick "separate serial numbers on each band".
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialPerBandWhen {
+    #[default]
+    Never,
+    /// Any `CATEGORY-OPERATOR` of `MULTI-OP`, including multi-single.
+    MultiOp,
+    /// `MULTI-OP` with `CATEGORY-TRANSMITTER` of `TWO` or `UNLIMITED`.
+    /// Single-op and multi-one keep one series across all bands.
+    MultiTx,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

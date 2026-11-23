@@ -3,15 +3,18 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Modal from "./Modal.svelte";
-  import { api, dateTimeText, errorText, zoneLabel, type QrzConfig, type ScpStatus } from "$lib/api";
+  import { api, dateTimeText, errorText, zoneLabel, type CtyStatus, type QrzConfig, type ScpStatus } from "$lib/api";
 
   let {
     initial,
     onsave,
+    onctychange,
     onclose,
   }: {
     initial: QrzConfig;
     onsave: (config: QrzConfig) => void;
+    /** A new country file was loaded. */
+    onctychange?: () => void;
     onclose: () => void;
   } = $props();
 
@@ -20,6 +23,10 @@
   let scpBusy = $state(false);
   let scpMessage = $state("");
   let scpError = $state(false);
+  let cty = $state<CtyStatus | null>(null);
+  let ctyBusy = $state(false);
+  let ctyMessage = $state("");
+  let ctyError = $state(false);
   let testBusy = $state(false);
   let testMessage = $state("");
   let testError = $state(false);
@@ -27,11 +34,44 @@
   onMount(async () => {
     try {
       scp = await api.scpStatus();
+      cty = await api.ctyStatus();
     } catch (e) {
       scpMessage = errorText(e);
       scpError = true;
     }
   });
+
+  async function updateCty(action: () => Promise<CtyStatus | null>) {
+    ctyBusy = true;
+    ctyMessage = "";
+    try {
+      const s = await action();
+      if (s) {
+        cty = s;
+        ctyMessage = `Loaded ${s.count} countries`;
+        ctyError = false;
+        onctychange?.();
+      }
+    } catch (e) {
+      ctyMessage = errorText(e);
+      ctyError = true;
+    } finally {
+      ctyBusy = false;
+    }
+  }
+
+  const downloadCty = () => updateCty(api.ctyDownload);
+
+  const importCty = () =>
+    updateCty(async () => {
+      const path = await open({
+        title: "Import cty.csv",
+        filters: [{ name: "Country file", extensions: ["csv"] }],
+        multiple: false,
+        directory: false,
+      });
+      return path ? api.ctyImport(path) : null;
+    });
 
   async function updateScp(action: () => Promise<ScpStatus | null>) {
     scpBusy = true;
@@ -111,6 +151,32 @@
       <a href="https://www.supercheckpartial.com" onclick={(e) => link(e, "https://www.supercheckpartial.com")}
         >supercheckpartial.com</a
       >. Update it before each contest.
+    </p>
+
+    <h3>Country file</h3>
+    <p class="hint">
+      In general logs, shows each station's DXCC country, continent and zones, and whether it's a new one for you.
+    </p>
+    <p class="status">
+      {#if cty == null}
+        …
+      {:else if cty.count}
+        <span class="ok">{cty.count} countries</span>
+        {#if cty.updated}— updated {dateTimeText(cty.updated)} {zoneLabel()}{/if}
+      {:else}
+        No country file yet: countries won't be shown.
+      {/if}
+    </p>
+    <div class="row">
+      <button onclick={downloadCty} disabled={ctyBusy}>{ctyBusy ? "Working…" : "Download latest"}</button>
+      <button onclick={importCty} disabled={ctyBusy}>Import file…</button>
+    </div>
+    {#if ctyMessage}<p class="status" class:bad={ctyError}>{ctyMessage}</p>{/if}
+    <p class="hint">
+      Downloads cty.csv from
+      <a href="https://www.country-files.com" onclick={(e) => link(e, "https://www.country-files.com")}
+        >country-files.com</a
+      >, updated every few weeks as DXpeditions come and go.
     </p>
 
     <h3>QRZ.com</h3>

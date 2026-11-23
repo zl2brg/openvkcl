@@ -1,0 +1,20 @@
+# General logging: everyday operating and DX chasing, with no contest rules.
+# Every contact counts; the log tracks DXCC countries worked and confirmed.
+id = "general"
+name = "General logging (DX)"
+general = true
+cabrillo_name = ""
+duration_minutes = 0
+default_start_utc = "00:00"
+bands = ["2190m", "630m", "160m", "80m", "60m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "4m", "2m", "1.25m", "70cm", "33cm", "1.2G", "2.3G", "3.4G", "5.7G", "10G", "24G", "47G", "75G", "122G", "134G", "241G"]
+modes = ["SSB", "CW", "FT8", "FT4", "RTTY", "AM", "FM", "DIGITALVOICE", "PSK31", "JS8", "Q65", "JT65", "JT9", "MSK144", "OLIVIA", "SSTV"]
+exchange = ["rst"]
+
+[rework]
+kind = "never"
+
+[scoring]
+formula = "sum_points"
+
+[scoring.points]
+kind = "fixed"

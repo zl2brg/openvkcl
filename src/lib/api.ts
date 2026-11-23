@@ -13,6 +13,8 @@ export interface CategoryField {
 export interface ContestDef {
   id: string;
   name: string;
+  /** A general (DX) log: no contest period, scoring or dupes. */
+  general: boolean;
   cabrillo_name: string;
   rules_url: string;
   duration_minutes: number;
@@ -24,6 +26,8 @@ export interface ContestDef {
   number_label: string;
   number_from: string[];
   serial_per_band: boolean;
+  /** When the setup dialog should tick separate serials per band. */
+  serial_per_band_when: "never" | "multi_op" | "multi_tx";
   workable: string[];
   blocks: { minutes: number } | null;
   sessions: { start_minute: number; minutes: number }[];
@@ -42,7 +46,11 @@ export interface ContestDef {
   };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
-  scoring: { bonus: Bonus[] };
+  scoring: {
+    bonus: Bonus[];
+    /** Only "fixed" points have `local_time`: a points factor between two local times (e.g. RD's 01:00-06:00 x3). */
+    points: { kind: string; local_time?: { from: string; to: string; factor: number } | null };
+  };
 }
 
 export interface Bonus {
@@ -96,6 +104,28 @@ export interface Qso {
   operator: string;
   sent_exch: string;
   rcvd_exch: string;
+  name: string;
+  qth: string;
+  comment: string;
+  dxcc: number | null;
+  /** ADIF QSL status: Y, N, R (requested), Q (queued), I (ignore) or "". */
+  qsl_sent: string;
+  qsl_rcvd: string;
+  lotw_sent: string;
+  lotw_rcvd: string;
+  eqsl_sent: string;
+  eqsl_rcvd: string;
+  /** Other ADIF fields from an import. */
+  adif: Record<string, string>;
+}
+
+/** The country a station is in, from the country file. */
+export interface Country {
+  dxcc: number;
+  country: string;
+  cont: string;
+  cqz: number;
+  ituz: number;
 }
 
 export interface QsoResult {
@@ -112,7 +142,8 @@ export interface QsoResult {
   rework_at: string | null;
 }
 
-export type QsoRow = Qso & QsoResult;
+/** In general logs, rows carry the station's country and whether it's the first contact with it. */
+export type QsoRow = Qso & QsoResult & Partial<Country> & { new_dxcc: boolean };
 
 export interface GroupScore {
   name: string;
@@ -150,6 +181,21 @@ export interface QsoInput {
   rcvd_nr: string;
   rcvd_exch: string;
   rcvd_locator: string;
+  name: string;
+  qth: string;
+  comment: string;
+}
+
+/** Whether a country has been worked before (on a band, in a mode class). */
+export type Need = "new" | "worked" | "confirmed";
+
+export interface DxCheck {
+  country: Country;
+  any: Need;
+  band: Need;
+  mode: Need;
+  /** The country on each band and mode class it has been worked on. */
+  slots: { band: string; class: "PH" | "CW" | "DG"; need: Need }[];
 }
 
 export interface CheckResult {
@@ -157,7 +203,28 @@ export interface CheckResult {
   sent_nr: string;
   known_locator: string | null;
   known_exch: string | null;
+  known_name: string | null;
+  dx: DxCheck | null;
   previous: QsoRow[];
+}
+
+export interface CtyStatus {
+  count: number;
+  path: string;
+  updated: string | null;
+}
+
+export interface ImportSummary {
+  imported: number;
+  duplicates: number;
+  out_of_range: number;
+  not_in_contest: number;
+  unreadable: number;
+}
+
+export interface ImportResult {
+  summary: ImportSummary;
+  view: LogView;
 }
 
 export type RigKind = "none" | "hamlib" | "rigctld" | "flrig" | "tci" | "flex";
@@ -263,7 +330,14 @@ export const api = {
   deleteQso: (id: number) => invoke<LogView>("delete_qso", { id }),
   cabrilloText: () => invoke<string>("cabrillo_text"),
   exportCabrillo: (path: string) => invoke<void>("export_cabrillo", { path }),
-  exportAdif: (path: string) => invoke<void>("export_adif", { path }),
+  /** Returns how many contacts were exported. */
+  exportAdif: (path: string, from: string | null, to: string | null) =>
+    invoke<number>("export_adif", { path, from, to }),
+  importAdif: (path: string, from: string | null, to: string | null) =>
+    invoke<ImportResult>("import_adif", { path, from, to }),
+  ctyStatus: () => invoke<CtyStatus>("cty_status"),
+  ctyDownload: () => invoke<CtyStatus>("cty_download"),
+  ctyImport: (path: string) => invoke<CtyStatus>("cty_import", { path }),
   exportScoreSheet: (path: string) =>
     invoke<void>("export_score_sheet", { path }),
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),
@@ -372,6 +446,87 @@ export function parseDateTimeText(text: string): string | null {
   const f = [+m[1], +m[2] - 1, +m[3], +m[4], +m[5]] as const;
   const d = timeZone.local ? new Date(...f) : new Date(Date.UTC(...f));
   return isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** "2026-08-15T03:05:00Z" -> "2026-08-15", in the display time zone. */
+export function dateText(iso: string): string {
+  const [y, mo, d] = parts(new Date(iso));
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+
+/**
+ * The start (or with `end`, the last millisecond) of a "YYYY-MM-DD" day in the
+ * display time zone, as an ISO string; null for an empty or malformed date.
+ */
+export function dayBound(date: string, end = false): string | null {
+  const m = date.trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const f = [+m[1], +m[2] - 1, +m[3] + (end ? 1 : 0)] as const;
+  const t = timeZone.local ? new Date(...f).getTime() : Date.UTC(...f);
+  return isNaN(t) ? null : new Date(end ? t - 1 : t).toISOString();
+}
+
+/** A From/To date range of whole days; empty strings leave that end open. */
+export interface DateRange {
+  from: string;
+  to: string;
+}
+
+/** A test for whether an ISO time falls inside `range`. */
+export function rangeTest(range: DateRange): (iso: string) => boolean {
+  const from = dayBound(range.from);
+  const to = dayBound(range.to, true);
+  const f = from ? new Date(from).getTime() : -Infinity;
+  const t = to ? new Date(to).getTime() : Infinity;
+  return (iso) => {
+    const x = new Date(iso).getTime();
+    return x >= f && x <= t;
+  };
+}
+
+/** Phone, CW or data: the mode classes DXCC awards count by. */
+export function modeClass(mode: string): "PH" | "CW" | "DG" {
+  if (["PH", "SSB", "USB", "LSB", "AM", "FM", "DIGITALVOICE"].includes(mode)) return "PH";
+  return mode === "CW" ? "CW" : "DG";
+}
+
+/** Signal report assumed when none is typed; "" for modes that exchange dB reports. */
+export function defaultRst(mode: string): string {
+  const c = modeClass(mode);
+  if (c === "PH") return "59";
+  if (c === "CW" || ["RY", "RTTY", "PSK31", "OLIVIA", "SSTV", "DG"].includes(mode)) return "599";
+  return "";
+}
+
+/**
+ * The general-log mode for what the radio reports (Hamlib/FLRig/TCI names), or
+ * null to keep `current`, e.g. on a data mode when a digital mode is already chosen.
+ */
+export function generalMode(rigMode: string, current: string): string | null {
+  const m = rigMode.trim().toUpperCase();
+  const data = m.startsWith("PKT") || m.startsWith("DATA") || m.startsWith("DIG") || m.includes("-D");
+  if (data) return modeClass(current) === "DG" && current !== "RTTY" ? null : "FT8";
+  if (m.startsWith("CW")) return "CW";
+  if (m.startsWith("RTTY") || m.startsWith("FSK")) return "RTTY";
+  if (["AM", "SAM"].includes(m)) return "AM";
+  if (["FM", "WFM", "FMN", "NFM"].includes(m)) return "FM";
+  if (["USB", "LSB", "SSB", "DSB"].includes(m)) return "SSB";
+  if (["D-STAR", "DSTAR", "DV", "FDV", "FREEDV"].includes(m)) return "DIGITALVOICE";
+  return null;
+}
+
+/** QSL confirmations that count for DXCC: a paper card or LoTW. */
+export function isConfirmed(q: Qso): boolean {
+  return q.qsl_rcvd === "Y" || q.lotw_rcvd === "Y";
+}
+
+/** Minute-precision entry can sit slightly ahead of wall clock; only warn past this slack. */
+const FUTURE_QSO_SLACK_MS = 60_000;
+
+/** True when a parsed QSO time is meaningfully after wall-clock now. */
+export function isFutureQsoTime(iso: string | null, now: Date = new Date()): boolean {
+  if (!iso) return false;
+  return new Date(iso).getTime() - now.getTime() > FUTURE_QSO_SLACK_MS;
 }
 
 /** A 4, 6, 8 or 10 character Maidenhead locator, e.g. "QF22", "RF73hc", "RF73hc34". */

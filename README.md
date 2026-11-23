@@ -7,11 +7,17 @@ A cross-platform (Windows, Linux, macOS) contest logger for Australian and New
 Zealand contests, in the spirit of VKCL by Mike VK3AVV (SK).
 
 Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
+Changes are listed in [CHANGELOG](CHANGELOG.md).
 
 ## Features
 
 - WIA contests: Remembrance Day, Trans-Tasman Low-Band, Harry Angel Sprint,
-  John Moyle Memorial Field Day and the VHF-UHF Field Days.
+  John Moyle Memorial Field Day and the VHF-UHF Field Days. Where the rules
+  restart serial numbers at 001 on each band, choosing that category ticks
+  "Separate serial numbers on each band": any multi-operator entry in the
+  VHF-UHF Field Day, multi-two and multi-multi in John Moyle, and multi-multi
+  in Trans-Tasman. Single-operator entries keep one series, as do multi-single
+  entries in John Moyle and Trans-Tasman.
 - NZART HF contests: Jock White Memorial Field Day, Memorial Contest and
   Sangster Shield, with their one-hour (or half-hour) periods, separate serial
   numbers per band, and branch-number multipliers.
@@ -26,6 +32,18 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
   each contact in the log shows a ⏱ countdown beside the call until that
   station can be worked again on that band and mode.
 - Distance scoring from 6, 8 or 10-character Maidenhead locators.
+- General logging for everyday operating and DX chasing: no contest rules, ADIF
+  modes (SSB, CW, FT8, FT4, …) on every band from 2190m up, name, QTH, comment
+  and QSL card / LoTW / eQSL status for each contact. As you type a call it
+  shows the station's DXCC country and zones and whether it's a new country, or
+  new on this band or mode, for you; the side panel counts countries worked and
+  confirmed overall, by band and by phone/CW/data. Filter the log, the counts
+  and ADIF exports by date (e.g. from 1 January 2026). Countries come from the
+  cty.csv country file: download it from **Lookups…**.
+- ADIF import into any log: contacts already in the log are skipped, and a
+  contest log only takes contacts from the contest period on its bands and modes.
+  An optional date range imports part of a large file. Other ADIF fields (power,
+  LoTW dates, …) are kept and written back out on export.
 - Cabrillo 3.0 export with the contest names vklogchecker.com expects, plus ADIF
   and a per-band CSV score sheet (distance, claimed points and running total
   for each contact).
@@ -44,16 +62,31 @@ Built with [Tauri 2](https://tauri.app) (Rust backend) and Svelte.
 
 ## Using it
 
-1. **New log** - pick the contest, start time, your callsign and exchange details.
+1. **New log** - pick the contest, start time, your callsign and exchange details,
+   or **General logging (DX)** for an everyday logbook.
    WIA contests that use an overlay offer Youth, Rookie and YL as well as none.
+   Contests with local-time scoring (Remembrance Day's 01:00-06:00 triple points)
+   also ask for your time zone during the contest; it defaults to this computer's
+   offset on the contest date, so change it if your PC clock is set to UTC or
+   you're operating away from home.
+   Choosing one of those categories ticks "Separate serial numbers on each
+   band". Changing back to a category that uses one series clears the tick.
+   The box can still be changed by hand until the category changes again, and
+   opening an existing log leaves its saved choice alone.
 2. Type a callsign. The status line shows DUPE, points and new multipliers as you type.
    Super Check Partial matches appear underneath (calls already in the log are
    highlighted; click one to use it), with the QRZ.com details when enabled.
 3. **Space** moves to the next exchange field, **Enter** logs, **Esc** clears.
+   RST sent is shown before RST received. In a contest, Space goes from the
+   call to RST received, then the serial, number and locator. In a general log
+   it goes call, RST sent, RST received, name, then comment.
    Without a radio connected, **Alt+Up/Down** changes band and **Alt+Left/Right** changes mode.
-4. Double-click a contact in the log to edit or delete it. Click the clock to
-   show times in UTC or local time; the log and exports always use UTC. The
-   sun/moon icon next to it switches between dark and light appearance.
+   Tick **Enter time** to log a contact at a chosen time. A time more than a
+   minute ahead is marked as in the future.
+4. Double-click a contact in the log to edit or delete it. The same future-time
+   warning appears there. Click the clock to show times in UTC or local time;
+   the log and exports always use UTC. The sun/moon icon next to it switches
+   between dark and light appearance.
 5. **Cabrillo…** previews the log and saves it for upload to
    [vklogchecker.com](https://www.vklogchecker.com).
 6. **Score sheet** writes per-band log sheets (CSV) with the period, points,

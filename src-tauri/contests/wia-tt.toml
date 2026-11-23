@@ -9,6 +9,9 @@ default_start_utc = "08:00"
 bands = ["160m", "80m", "40m"]
 modes = ["PH", "CW", "RY", "DG"]
 exchange = ["rst", "serial"]
+# Multi-multi stations start serial numbers at 001 on each band.
+# Single and multi-one use one series.
+serial_per_band_when = "multi_tx"
 workable = ["VK", "VL", "VJ", "VI", "AX", "VH", "VM", "VN", "VZ", "ZL", "ZM"]
 
 # RTTY and PSK are combined as the digital mode.

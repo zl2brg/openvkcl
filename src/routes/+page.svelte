@@ -8,11 +8,12 @@
     errorText,
     formatFreq,
     pad,
-    clockText,
-    zoneLabel,
+    dayBound,
+    rangeTest,
     RIG_STATUS_EVENT,
     type CheckResult,
     type ContestDef,
+    type DateRange,
     type LogSetup,
     type LogView,
     type Qso,
@@ -22,7 +23,6 @@
     type RigStatus,
     type Settings,
   } from "$lib/api";
-  import { setLocalTime, timeZone } from "$lib/timezone.svelte";
   import EntryLine from "$lib/components/EntryLine.svelte";
   import LogTable from "$lib/components/LogTable.svelte";
   import ScorePanel from "$lib/components/ScorePanel.svelte";
@@ -33,6 +33,8 @@
   import AboutDialog from "$lib/components/AboutDialog.svelte";
   import { setTheme, theme } from "$lib/theme.svelte";
   import LookupDialog from "$lib/components/LookupDialog.svelte";
+  import AdifDialog from "$lib/components/AdifDialog.svelte";
+  import Clock from "$lib/components/Clock.svelte";
 
   const LOG_FILTER = [{ name: "OpenVKCL log", extensions: ["ovkcl"] }];
 
@@ -42,7 +44,6 @@
   let view = $state<LogView | null>(null);
   let logVersion = $state(0);
   let rig = $state<RigStatus>({ connected: false, freq_hz: null, band: null, mode: null, rig_mode: null, error: null });
-  let now = $state(new Date());
   let version = $state("");
   let notice = $state("");
   let noticeIsError = $state(false);
@@ -54,11 +55,20 @@
   let lookupDialog = $state(false);
   let editRow = $state<QsoRow | null>(null);
   let cabrillo = $state<string | null>(null);
+  let adifDialog = $state<{ kind: "import" | "export"; file?: string } | null>(null);
+  /** Dates the log is shown between, in general logs. */
+  let range = $state<DateRange>({ from: "", to: "" });
 
   let entry: EntryLine | undefined = $state();
 
   let fileName = $derived(view?.path.split(/[\\/]/).pop() ?? "");
   let worked = $derived(new Set(view?.qsos.map((q) => q.call) ?? []));
+  let general = $derived(!!view?.contest.general);
+  let rangeRows = $derived.by(() => {
+    if (!view || !general) return [];
+    const inRange = rangeTest(range);
+    return view.qsos.filter((q) => inRange(q.time));
+  });
 
   function say(text: string, isError = false) {
     notice = text;
@@ -66,6 +76,7 @@
   }
 
   function setView(v: LogView) {
+    if (v.path !== view?.path) range = { from: "", to: "" };
     view = v;
     logVersion++;
   }
@@ -76,7 +87,6 @@
   }
 
   onMount(() => {
-    const clock = setInterval(() => (now = new Date()), 1000);
     const unlisten = listen<RigStatus>(RIG_STATUS_EVENT, (e) => (rig = e.payload));
     (async () => {
       try {
@@ -100,12 +110,46 @@
       } catch (e) {
         say(errorText(e), true);
       }
+      refreshLookupFiles();
     })();
     return () => {
-      clearInterval(clock);
       unlisten.then((f) => f());
     };
   });
+
+  /** Lookup files older than this are downloaded again at startup. */
+  const LOOKUP_MAX_AGE_MS = 7 * 24 * 3_600_000;
+
+  type FileStatus = { count: number; updated: string | null };
+
+  const stale = (s: FileStatus) =>
+    !s.count || !s.updated || Date.now() - new Date(s.updated).getTime() > LOOKUP_MAX_AGE_MS;
+
+  /** Download the country file and MASTER.SCP in the background when missing or a week old. */
+  async function refreshLookupFiles() {
+    const done: string[] = [];
+    const failed: string[] = [];
+    const update = async (name: string, status: () => Promise<FileStatus>, download: () => Promise<unknown>) => {
+      try {
+        if (!stale(await status())) return;
+        await download();
+        done.push(name);
+      } catch {
+        failed.push(name);
+      }
+    };
+    await Promise.all([
+      update("country file", api.ctyStatus, api.ctyDownload),
+      update("MASTER.SCP", api.scpStatus, api.scpDownload),
+    ]);
+    if (done.includes("country file")) {
+      const v = await api.getLog().catch(() => null);
+      if (v) setView(v);
+    }
+    if (failed.length) say(`Couldn't download the ${failed.join(" or ")}: try again from Lookups…`, true);
+    // Don't cover a message about the log itself.
+    else if (done.length && !notice) say(`Updated the ${done.join(" and ")}`);
+  }
 
   function newLogSetup(): LogSetup {
     const contest = contests[0];
@@ -131,9 +175,11 @@
 
   async function createLog(setup: LogSetup) {
     const year = new Date(setup.start).getUTCFullYear();
+    const call = setup.station.callsign.replace(/\//g, "_");
+    const isGeneral = contests.find((c) => c.id === setup.contest_id)?.general;
     const path = await save({
       title: "Save new log as",
-      defaultPath: `${setup.contest_id}-${year}-${setup.station.callsign.replace(/\//g, "_")}.ovkcl`,
+      defaultPath: isGeneral ? `logbook-${call}.ovkcl` : `${setup.contest_id}-${year}-${call}.ovkcl`,
       filters: LOG_FILTER,
     });
     if (!path) return;
@@ -210,7 +256,7 @@
     if (!view) return;
     const path = await save({
       title: "Save Cabrillo log",
-      defaultPath: `${view.setup.station.callsign.replace(/\//g, "_")}-${view.contest.id}.log`,
+      defaultPath: exportName("log"),
       filters: [{ name: "Cabrillo log", extensions: ["log", "cbr", "txt"] }],
     });
     if (!path) return;
@@ -224,27 +270,47 @@
     }
   }
 
-  async function exportAdif() {
-    if (!view) return;
+  /** The file name for exports: the callsign, and the contest for contest logs. */
+  function exportName(ext: string) {
+    if (!view) return "";
+    const call = view.setup.station.callsign.replace(/\//g, "_");
+    return general ? `${call}-log.${ext}` : `${call}-${view.contest.id}.${ext}`;
+  }
+
+  async function exportAdif(r: DateRange): Promise<boolean> {
     const path = await save({
       title: "Export ADIF",
-      defaultPath: `${view.setup.station.callsign.replace(/\//g, "_")}-${view.contest.id}.adi`,
+      defaultPath: exportName("adi"),
       filters: [{ name: "ADIF", extensions: ["adi"] }],
     });
-    if (!path) return;
-    try {
-      await api.exportAdif(withExt(path, "adi"));
-      say(`Exported ADIF to ${withExt(path, "adi")}`);
-    } catch (e) {
-      say(errorText(e), true);
-    }
+    if (!path) return false;
+    const n = await api.exportAdif(withExt(path, "adi"), dayBound(r.from), dayBound(r.to, true));
+    say(`Exported ${n.toLocaleString()} contacts to ${withExt(path, "adi")}`);
+    return true;
+  }
+
+  async function chooseAdifImport() {
+    const file = await open({
+      title: "Import ADIF",
+      filters: [{ name: "ADIF", extensions: ["adi", "adif", "ADI", "txt"] }],
+      multiple: false,
+      directory: false,
+    });
+    if (file) adifDialog = { kind: "import", file };
+  }
+
+  async function importAdif(r: DateRange) {
+    const result = await api.importAdif(adifDialog?.file ?? "", dayBound(r.from), dayBound(r.to, true));
+    setView(result.view);
+    say(`Imported ${result.summary.imported.toLocaleString()} contacts`);
+    return result.summary;
   }
 
   async function exportScoreSheet() {
     if (!view) return;
     const path = await save({
       title: "Export score sheet",
-      defaultPath: `${view.setup.station.callsign.replace(/\//g, "_")}-${view.contest.id}.csv`,
+      defaultPath: exportName("csv"),
       filters: [{ name: "CSV spreadsheet", extensions: ["csv"] }],
     });
     if (!path) return;
@@ -300,13 +366,7 @@
         <span class="muted" title={rig.error ?? ""}>{rig.error ? "Radio not responding" : "No radio"}</span>
       {/if}
     </div>
-    <button
-      class="clock mono"
-      onclick={() => setLocalTime(!timeZone.local)}
-      title="Click to show times in {timeZone.local ? 'UTC' : 'local time'}. Logs and exports are always UTC."
-    >
-      {clockText(now)} {zoneLabel()}
-    </button>
+    <Clock />
     <button
       class="theme-toggle"
       onclick={() => setTheme(theme.mode === "dark" ? "light" : "dark")}
@@ -329,11 +389,16 @@
     <button onclick={openLog}>Open log</button>
     <button onclick={() => view && (setupDialog = { initial: view.setup, isNew: false })} disabled={!view}>Setup</button>
     <span class="sep"></span>
-    <button onclick={showCabrillo} disabled={!view}>Cabrillo…</button>
-    <button onclick={exportAdif} disabled={!view}>Export ADIF</button>
-    <button onclick={exportScoreSheet} disabled={!view} title="Per-band sheet with distance and points for each contact">
-      Score sheet
-    </button>
+    {#if !general}
+      <button onclick={showCabrillo} disabled={!view}>Cabrillo…</button>
+    {/if}
+    <button onclick={chooseAdifImport} disabled={!view} title="Add contacts from an ADIF file to this log">Import ADIF…</button>
+    <button onclick={() => (adifDialog = { kind: "export" })} disabled={!view}>Export ADIF…</button>
+    {#if !general}
+      <button onclick={exportScoreSheet} disabled={!view} title="Per-band sheet with distance and points for each contact">
+        Score sheet
+      </button>
+    {/if}
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
     <button onclick={() => (lookupDialog = true)} title="Super Check Partial and QRZ.com">Lookups…</button>
@@ -353,7 +418,6 @@
           setup={view.setup}
           {rig}
           {logVersion}
-          {now}
           {worked}
           qrzEnabled={!!settings?.qrz.enabled}
           onlog={logQso}
@@ -363,13 +427,13 @@
             rows={view.qsos}
             contest={view.contest}
             highlight={check?.previous[0]?.call ?? ""}
-            {now}
+            bind:range
             onedit={(r) => (editRow = r)}
             ondone={refocus}
           />
         </div>
       </div>
-      <ScorePanel {view} {now} {check} />
+      <ScorePanel {view} {check} rows={rangeRows} {range} />
     </main>
   {:else}
     <section class="welcome">
@@ -431,6 +495,10 @@
   <LookupDialog
     initial={settings.qrz}
     onsave={saveLookups}
+    onctychange={async () => {
+      const v = await api.getLog();
+      if (v) setView(v);
+    }}
     onclose={() => {
       lookupDialog = false;
       refocus();
@@ -446,6 +514,22 @@
     ondelete={deleteQso}
     onclose={() => {
       editRow = null;
+      refocus();
+    }}
+  />
+{/if}
+
+{#if adifDialog && view}
+  <AdifDialog
+    kind={adifDialog.kind}
+    file={adifDialog.file}
+    {general}
+    rows={view.qsos}
+    initial={adifDialog.kind === "export" && general ? range : { from: "", to: "" }}
+    onimport={importAdif}
+    onexport={exportAdif}
+    onclose={() => {
+      adifDialog = null;
       refocus();
     }}
   />
@@ -503,14 +587,6 @@
   .rig.on .dot {
     background: var(--ok);
   }
-  .clock {
-    font-size: 1.05rem;
-    background: none;
-    border: none;
-    padding: 0;
-    color: inherit;
-    cursor: pointer;
-  }
   .theme-toggle {
     display: flex;
     align-items: center;
@@ -549,7 +625,8 @@
   }
   main {
     display: grid;
-    grid-template-columns: 1fr 280px;
+    /* minmax: a wide log table scrolls instead of pushing the side panel off screen. */
+    grid-template-columns: minmax(0, 1fr) 280px;
     gap: 12px;
     padding: 12px 14px;
     min-height: 0;
@@ -559,6 +636,7 @@
     flex-direction: column;
     gap: 12px;
     min-height: 0;
+    min-width: 0;
   }
   .table {
     flex: 1;

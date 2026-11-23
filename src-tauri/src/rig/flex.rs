@@ -11,7 +11,8 @@ use tokio::time::{Instant, timeout, timeout_at};
 
 pub const DEFAULT_PORT: u16 = 4992;
 const TIMEOUT: Duration = Duration::from_secs(3);
-/// How long to wait after connecting for the radio to report a slice.
+/// How long to wait after connecting for the radio to report its slices before
+/// saying it has none open.
 const FIRST_STATE: Duration = Duration::from_secs(5);
 /// With keepalive enabled the radio drops clients that stop pinging, and a failed
 /// ping tells us the radio has gone.
@@ -24,6 +25,8 @@ pub struct Client {
     /// Sequence number of `sub slice all`, to report it failing.
     sub_seq: u32,
     last_ping: Instant,
+    /// When the connection opened; the radio reports its slices soon after.
+    connected_at: Instant,
     radio: Radio,
 }
 
@@ -119,6 +122,7 @@ impl Client {
             seq: 0,
             sub_seq: 0,
             last_ping: Instant::now(),
+            connected_at: Instant::now(),
             radio: Radio::default(),
         };
         client.send("client program OpenVKCL").await?;
@@ -138,10 +142,10 @@ impl Client {
             .map_err(|e| format!("FlexRadio: {e}"))
     }
 
-    /// Wait up to `wait` for the radio to change, then return its frequency and mode.
-    pub async fn poll(&mut self, wait: Duration) -> Result<(u64, String), String> {
-        let started = Instant::now();
-        let mut deadline = started + wait;
+    /// Wait up to `wait` for the radio to change, then return its frequency and
+    /// mode, or None while it has no slice open.
+    pub async fn poll(&mut self, wait: Duration) -> Result<Option<(u64, String)>, String> {
+        let mut deadline = Instant::now() + wait;
         loop {
             if self.last_ping.elapsed() >= PING_EVERY {
                 self.last_ping = Instant::now();
@@ -149,13 +153,12 @@ impl Client {
             }
             match timeout_at(deadline, self.lines.next_line()).await {
                 Err(_) => {
-                    if let Some(state) = self.radio.state() {
+                    let state = self.radio.state();
+                    if state.is_some() || self.connected_at.elapsed() >= FIRST_STATE {
                         return Ok(state);
                     }
-                    if started.elapsed() >= FIRST_STATE {
-                        return Err("FlexRadio has no slice open; start SmartSDR and open a slice".into());
-                    }
-                    deadline = Instant::now() + wait;
+                    // Still waiting for the first slices: don't spin when `wait` is zero.
+                    deadline = Instant::now() + wait.max(Duration::from_millis(100));
                 }
                 Ok(Ok(None)) => return Err("FlexRadio closed the connection".into()),
                 Ok(Err(e)) => return Err(format!("FlexRadio: {e}")),
@@ -165,10 +168,11 @@ impl Client {
                     {
                         return Err(format!("FlexRadio refused slice updates: {error}"));
                     }
-                    if self.radio.apply(&line)
-                        && let Some(state) = self.radio.state()
-                    {
-                        return Ok(state);
+                    if self.radio.apply(&line) {
+                        let state = self.radio.state();
+                        if state.is_some() || self.connected_at.elapsed() >= FIRST_STATE {
+                            return Ok(state);
+                        }
                     }
                 }
             }
@@ -354,13 +358,38 @@ mod tests {
         });
 
         let mut c = Client::connect("127.0.0.1", port).await.unwrap();
-        assert_eq!(c.poll(Duration::ZERO).await.unwrap(), (3_650_000, "LSB".into()));
+        assert_eq!(c.poll(Duration::ZERO).await.unwrap(), Some((3_650_000, "LSB".into())));
         c.send(&spot("VK2ABC", "LSB", 3_650_000, "worked")).await.unwrap();
-        assert_eq!(c.poll(Duration::from_secs(1)).await.unwrap(), (3_650_000, "CW".into()));
+        assert_eq!(c.poll(Duration::from_secs(1)).await.unwrap(), Some((3_650_000, "CW".into())));
         let got = radio.await.unwrap();
         assert_eq!(got[..3], ["C1|client program OpenVKCL", "C2|keepalive enable", "C3|sub slice all"]);
         assert!(got[3].starts_with("C4|spot add rx_freq=3.650000 callsign=VK2ABC"));
         assert_eq!(c.poll(Duration::from_secs(1)).await, Err("FlexRadio closed the connection".into()));
+    }
+
+    /// Connected with no slice open, until one opens and after it closes.
+    #[tokio::test]
+    async fn no_slice_open() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (open, opened) = tokio::sync::oneshot::channel::<()>();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            stream.write_all(b"R1|0|\nR2|0|\nR3|0|\n").await.unwrap();
+            opened.await.unwrap();
+            stream
+                .write_all(b"S1|slice 0 in_use=1 RF_frequency=14.200000 mode=USB tx=1\nS1|slice 0 in_use=0\n")
+                .await
+                .unwrap();
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+        let mut c = Client::connect("127.0.0.1", port).await.unwrap();
+        // As if the radio had been given its few seconds to report slices.
+        c.connected_at -= FIRST_STATE;
+        assert_eq!(c.poll(Duration::from_millis(100)).await, Ok(None));
+        open.send(()).unwrap();
+        assert_eq!(c.poll(Duration::from_secs(1)).await, Ok(Some((14_200_000, "USB".into()))));
+        assert_eq!(c.poll(Duration::from_secs(1)).await, Ok(None));
     }
 
     #[tokio::test]

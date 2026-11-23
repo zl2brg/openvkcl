@@ -77,7 +77,8 @@
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let general = $derived(contest.general);
   let defaultRst = $derived(rstFor(mode));
-  let rigDriven = $derived(followRig && rig.connected);
+  // Band and mode follow the radio only while it reports a frequency.
+  let rigDriven = $derived(followRig && rig.connected && rig.freq_hz != null);
 
   $effect(() => {
     // General logs list every band from 2190m up; start on 20m rather than the first.

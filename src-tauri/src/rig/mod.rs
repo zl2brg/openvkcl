@@ -129,21 +129,23 @@ impl Client {
     }
 
     /// The radio's frequency and mode, at most `interval` after the last call.
-    async fn poll(&mut self, interval: Duration) -> Result<(u64, String), String> {
+    /// The radio's frequency and mode, or None when it's connected but has none
+    /// to report (a FlexRadio with no slice open).
+    async fn poll(&mut self, interval: Duration) -> Result<Option<(u64, String)>, String> {
         match self {
             Client::Hamlib(c) => {
                 tokio::time::sleep(interval).await;
-                c.poll().await
+                c.poll().await.map(Some)
             }
             Client::Rigctld(c) => {
                 tokio::time::sleep(interval).await;
-                c.poll().await
+                c.poll().await.map(Some)
             }
             Client::Flrig(c) => {
                 tokio::time::sleep(interval).await;
-                c.poll().await
+                c.poll().await.map(Some)
             }
-            Client::Tci(c) => c.poll(interval).await,
+            Client::Tci(c) => c.poll(interval).await.map(Some),
             Client::Flex(c) => c.poll(interval).await,
         }
     }
@@ -197,7 +199,15 @@ async fn run(
                 let first = !shared.lock().unwrap().connected;
                 let wait = if first { Duration::ZERO } else { poll };
                 match client.poll(wait).await {
-                    Ok((hz, rig_mode)) => {
+                    Ok(None) => publish(
+                        &app,
+                        &shared,
+                        RigStatus {
+                            connected: true,
+                            ..Default::default()
+                        },
+                    ),
+                    Ok(Some((hz, rig_mode))) => {
                         let status = RigStatus {
                             connected: true,
                             freq_hz: Some(hz),

@@ -245,7 +245,9 @@
     {/if}
     <p class="status">
       Status:
-      {#if status.connected}
+      {#if status.connected && status.freq_hz == null}
+        <span class="ok">connected</span> — no slice active. Open a slice in SmartSDR to follow it.
+      {:else if status.connected}
         <span class="ok">connected</span> — {formatFreq(status.freq_hz)} kHz {status.rig_mode ?? ""}
       {:else if status.error}
         <span class="bad">{status.error}</span>

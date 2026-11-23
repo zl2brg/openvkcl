@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+## [0.6.0] - 2026-11-23
+
+### Fixed
+
+- Black window on older macOS (Big Sur / Monterey): the frontend was built for
+  Safari 16.4+ while the system WKWebView is Safari 14–15, so the script never
+  parsed. Release builds now target ES2020 / Safari 14 (Chrome 105 on Windows),
+  and the macOS minimum is Big Sur (11.0).
+
 ### Added
 
 - **General logging (DX)**, a log type for everyday operating and DX

@@ -29,4 +29,20 @@ export default defineConfig(() => ({
       ignored: ["**/src-tauri/**"],
     },
   },
+  envPrefix: ["VITE_", "TAURI_ENV_*"],
+  build: {
+    // Without an explicit target, Vite 8 defaults to Safari 16.4+. That leaves a
+    // black window on older macOS WKWebViews: Big Sur ships Safari 14.1, Monterey
+    // Safari 15.x — both below 16.4 — so the JS fails to parse before anything
+    // renders. Prefer an ES year over safariNN: esbuild cannot downlevel some
+    // SvelteKit destructuring patterns to safari13/14, but es2020 strips
+    // ES2021+ syntax (e.g. ??=) that Big Sur cannot parse, while keeping
+    // features Safari 14 already has (optional chaining, nullish coalescing).
+    // https://v2.tauri.app/start/frontend/vite/
+    // https://v2.tauri.app/reference/webview-versions/
+    target: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "es2020",
+    minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
+    sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    cssTarget: process.env.TAURI_ENV_PLATFORM === "windows" ? "chrome105" : "safari14",
+  },
 }));

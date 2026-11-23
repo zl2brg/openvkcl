@@ -186,6 +186,17 @@ Pushing a `v*` tag to GitHub builds installers for all three platforms
 macOS builds need an Apple Developer ID to be signed and notarised; unsigned
 builds will show a security warning when opened.
 
+### Platform notes
+
+- **macOS:** Big Sur (11.0) or later. The app uses the system WKWebView; older
+  releases that advertised 10.13 could install on Big Sur/Monterey but showed a
+  black window because the frontend was built for Safari 16.4+. Release builds
+  now target ES2020 (and Safari 14 for CSS) so Big Sur's WebKit can run them.
+  Windows installers still target Chrome 105 (WebView2).
+- **Linux:** Same ES2020 frontend target as macOS (webkit2gtk). Needs WebKitGTK
+  4.1 to build and run.
+- **Windows:** WebView2 / Chrome 105 build target; unchanged by the macOS fix.
+
 ## Licence
 
 Copyright © 2026 Simon, ZL2BRG (simon.eatough@gmail.com).

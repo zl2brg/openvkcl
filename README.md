@@ -30,7 +30,8 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   blocks, new grid square), points, multipliers and running score. When a
   station is a dupe, the wait is shown as “in 60 mins” (and counts down), and
   each contact in the log shows a ⏱ countdown beside the call until that
-  station can be worked again on that band and mode.
+  station can be worked again on that band and mode. Click a column header to
+  sort the log; use **Search log** (Ctrl+F / ⌘F) to find a callsign.
 - Distance scoring from 6, 8 or 10-character Maidenhead locators.
 - General logging for everyday operating and DX chasing: no contest rules, ADIF
   modes (SSB, CW, FT8, FT4, …) on every band from 2190m up, name, QTH, comment
@@ -57,9 +58,13 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   network: band, mode and frequency follow the radio.
 - Super Check Partial: matching calls from MASTER.SCP and your log, plus N+1
   (one character different) suggestions, as you type. Download the latest
-  MASTER.SCP from **Lookups…** or import your own file.
+  MASTER.SCP from **Lookups…** or import your own file. MASTER.SCP and the
+  cty.csv country file also download in the background at startup when missing
+  or more than a week old.
 - QRZ.com lookups: name, location and grid for each callsign (needs a QRZ.com
   XML subscription for more than name and country).
+- Opening a log in a newer OpenVKCL adds any new columns without bumping the
+  file version, so older app versions can still open it.
 - Dark appearance by default, with a light theme one click away (the sun/moon
   icon at the top right).
 - Each log is a single SQLite file (`.ovkcl`); every contact is written to disk
@@ -88,10 +93,11 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
    Without a radio connected, **Alt+Up/Down** changes band and **Alt+Left/Right** changes mode.
    Tick **Enter time** to log a contact at a chosen time. A time more than a
    minute ahead is marked as in the future.
-4. Double-click a contact in the log to edit or delete it. The same future-time
-   warning appears there. Click the clock to show times in UTC or local time;
-   the log and exports always use UTC. The sun/moon icon next to it switches
-   between dark and light appearance.
+4. Double-click a contact in the log to edit it, or right-click for Edit /
+   Delete (delete asks for a second click to confirm). The same future-time
+   warning appears when editing. Click the clock to show times in UTC or local
+   time; the log and exports always use UTC. The sun/moon icon next to it
+   switches between dark and light appearance.
 5. **Cabrillo…** previews the log and saves it for upload to
    [vklogchecker.com](https://www.vklogchecker.com).
 6. **Score sheet** writes per-band log sheets (CSV) with the period, points,
@@ -129,7 +135,10 @@ OpenVKCL talks to the radio through one of:
   the SmartSDR API (port 4992); no SmartSDR CAT or DAX needed, so it works on
   macOS and Linux too. **Find radios** fills in the radio's address. OpenVKCL
   follows the transmit slice (SmartSDR or another client must have a slice
-  open) and marks logged contacts as spots on the panadapter.
+  open) and can mark logged contacts as spots on the panadapter. With no slice
+  open it stays connected and shows that in the header. On a Mac, allow
+  OpenVKCL under System Settings → Privacy & Security → Local Network the
+  first time.
 
 Choose **Radio…** and connect. The connection is remembered and re-established
 when the app starts.

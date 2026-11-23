@@ -5,7 +5,10 @@ use rusqlite::{Connection, OptionalExtension, Row, params};
 use std::path::Path;
 
 const APP_TAG: &str = "openvkcl";
-const SCHEMA_VERSION: i64 = 3;
+/// Raised only when older versions can't safely use the file. Columns that older
+/// versions can ignore (they read and write only their own, and new ones have
+/// defaults) are added without raising it; see `DETAIL_COLUMNS`.
+const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (
@@ -49,20 +52,25 @@ const COLUMNS: &str = "id, time, call, band, mode, freq_khz, sent_rst, sent_nr, 
                        name, qth, comment, dxcc, qsl_sent, qsl_rcvd, lotw_sent, lotw_rcvd, \
                        eqsl_sent, eqsl_rcvd, adif";
 
-/// Added in schema version 3.
-const DETAIL_COLUMNS: &str = "
-    ALTER TABLE qso ADD COLUMN name TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN qth TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN comment TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN dxcc INTEGER;
-    ALTER TABLE qso ADD COLUMN qsl_sent TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN qsl_rcvd TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN lotw_sent TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN lotw_rcvd TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN eqsl_sent TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN eqsl_rcvd TEXT NOT NULL DEFAULT '';
-    ALTER TABLE qso ADD COLUMN adif TEXT NOT NULL DEFAULT '';
-";
+/// General logging columns, added to older files when they're opened. Older
+/// versions of the app ignore them, so they don't raise the schema version.
+const DETAIL_COLUMNS: &[(&str, &str)] = &[
+    ("name", "TEXT NOT NULL DEFAULT ''"),
+    ("qth", "TEXT NOT NULL DEFAULT ''"),
+    ("comment", "TEXT NOT NULL DEFAULT ''"),
+    ("dxcc", "INTEGER"),
+    ("qsl_sent", "TEXT NOT NULL DEFAULT ''"),
+    ("qsl_rcvd", "TEXT NOT NULL DEFAULT ''"),
+    ("lotw_sent", "TEXT NOT NULL DEFAULT ''"),
+    ("lotw_rcvd", "TEXT NOT NULL DEFAULT ''"),
+    ("eqsl_sent", "TEXT NOT NULL DEFAULT ''"),
+    ("eqsl_rcvd", "TEXT NOT NULL DEFAULT ''"),
+    ("adif", "TEXT NOT NULL DEFAULT ''"),
+];
+
+/// Test builds of general logging marked files as version 3 for the detail
+/// columns; those files are version 2 files that older versions can open.
+const DETAIL_TEST_VERSION: i64 = 3;
 
 const INSERT: &str = "INSERT INTO qso (time, call, band, mode, freq_khz, sent_rst, sent_nr, sent_locator,
                                        rcvd_rst, rcvd_nr, rcvd_locator, operator, sent_exch, rcvd_exch,
@@ -189,10 +197,14 @@ impl Store {
         if app.as_deref() != Some(APP_TAG) {
             return Err("Not an OpenVKCL log file".into());
         }
-        let version: i64 = store
+        let mut version: i64 = store
             .meta("schema")?
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
+        if version == DETAIL_TEST_VERSION {
+            store.set_meta("schema", &SCHEMA_VERSION.to_string())?;
+            version = SCHEMA_VERSION;
+        }
         if version > SCHEMA_VERSION {
             return Err("This log was created by a newer version of OpenVKCL".into());
         }
@@ -205,9 +217,7 @@ impl Store {
                 )
                 .map_err(err)?;
         }
-        if version < 3 {
-            store.conn.execute_batch(DETAIL_COLUMNS).map_err(err)?;
-        }
+        store.add_detail_columns()?;
         if version < SCHEMA_VERSION {
             store.set_meta("schema", &SCHEMA_VERSION.to_string())?;
             store.upgraded_from = Some(version);
@@ -222,6 +232,23 @@ impl Store {
             }
         }
         Ok((store, setup))
+    }
+
+    fn add_detail_columns(&self) -> Result<(), String> {
+        let mut stmt = self.conn.prepare("SELECT name FROM pragma_table_info('qso')").map_err(err)?;
+        let have: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .map_err(err)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(err)?;
+        for (name, decl) in DETAIL_COLUMNS {
+            if !have.iter().any(|h| h == name) {
+                self.conn
+                    .execute_batch(&format!("ALTER TABLE qso ADD COLUMN {name} {decl}"))
+                    .map_err(err)?;
+            }
+        }
+        Ok(())
     }
 
     fn meta(&self, key: &str) -> Result<Option<String>, String> {
@@ -407,6 +434,29 @@ mod tests {
         assert_eq!(qsos[0].rcvd_exch, "30");
         assert_eq!(qsos[0].details, q.details);
         assert_eq!(store.upgraded_from, None);
+        // Older versions check the schema; the detail columns mustn't raise it.
+        assert_eq!(store.meta("schema").unwrap().as_deref(), Some("2"));
+        // What an older version does: read and write only its own columns.
+        store
+            .conn
+            .execute("UPDATE qso SET call = 'VK2ABE' WHERE id = ?1", [q.id])
+            .unwrap();
+        store
+            .conn
+            .execute("INSERT INTO qso (time, call, band, mode) VALUES ('2026-08-15T04:00:00Z', 'VK4AA', '40m', 'PH')", [])
+            .unwrap();
+        let qsos = store.qsos().unwrap();
+        assert_eq!(qsos[0].details, q.details);
+        assert_eq!(qsos[1].details, QsoDetails::default());
+        store.conn.execute("DELETE FROM qso WHERE call = 'VK4AA'", []).unwrap();
+        store.conn.execute("UPDATE qso SET call = 'VK2ABD'", []).unwrap();
+
+        // Files marked version 3 by test builds open, and go back to version 2.
+        store.set_meta("schema", "3").unwrap();
+        drop(store);
+        let (store, _) = Store::open(&path).unwrap();
+        assert_eq!(store.meta("schema").unwrap().as_deref(), Some("2"));
+        assert_eq!(store.qsos().unwrap()[0].details, q.details);
 
         // A version 1 file: no exch columns, and the number kept in rcvd_nr.
         store

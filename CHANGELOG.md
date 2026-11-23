@@ -15,6 +15,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   keep one series across all bands. Changing back to those categories
   clears the tick. The box can still be changed by hand until the category
   changes again, and opening an existing log leaves its saved choice alone.
+- **FlexRadio** under **Radio…**, for 6000, 8000 and Aurora series radios,
+  straight over the network with the SmartSDR API: no SmartSDR CAT or DAX,
+  so it works on macOS and Linux as well as Windows. The entry line follows
+  the transmit slice's band, mode and frequency, logged contacts can be
+  marked as spots on the panadapter, and **Find radios** fills in the
+  radio's address. On a Mac, allow OpenVKCL under System Settings → Privacy
+  & Security → Local Network the first time.
 - A warning when a contact's time is more than a minute ahead of the clock,
   on the entry line when **Enter time** is ticked and when editing a contact.
 

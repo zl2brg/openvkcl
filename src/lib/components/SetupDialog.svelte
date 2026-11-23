@@ -127,10 +127,35 @@
       return;
     }
     const loc = setup.station.locator.trim();
-    if (contest?.exchange.includes("locator") && (!isLocator(loc) || loc.length < 6)) {
+    if (!isLocator(loc) || loc.length < 6) {
       error = "Enter your grid locator: 6 characters, or 8 or 10 for more precision.";
       return;
     }
+    const st = setup.station;
+    const missing = (
+      [
+        ["name", st.name],
+        ["email", st.email],
+        ["city", st.city],
+        ["state", st.state],
+        ["country", st.country],
+      ] as const
+    )
+      .filter(([, v]) => !v.trim())
+      .map(([k]) => k);
+    if (missing.length) {
+      error = `Enter your ${missing.join(", ")}.`;
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(st.email.trim())) {
+      error = "Enter a valid email address.";
+      return;
+    }
+    st.name = st.name.trim();
+    st.email = st.email.trim();
+    st.city = st.city.trim();
+    st.state = st.state.trim();
+    st.country = st.country.trim();
     setup.station.locator = loc;
     setup.start = start.toISOString();
     setup.station.callsign = setup.station.callsign.trim().toUpperCase();
@@ -193,7 +218,7 @@
           <input class="mono" bind:value={setup.station.callsign} autocapitalize="characters" />
         </label>
         <label>
-          Grid locator
+          Grid locator *
           <input class="mono" bind:value={setup.station.locator} maxlength="10" />
         </label>
       </div>
@@ -245,17 +270,17 @@
       {#if !general}
         <label>Operators <input class="mono" bind:value={setup.station.operators} placeholder="VK3ABC VK3XYZ" /></label>
       {/if}
-      <label>Name <input bind:value={setup.station.name} /></label>
-      <label>Email <input type="email" bind:value={setup.station.email} /></label>
+      <label>Name * <input bind:value={setup.station.name} /></label>
+      <label>Email * <input type="email" bind:value={setup.station.email} /></label>
       <label>Club <input bind:value={setup.station.club} /></label>
       <label>Address <input bind:value={setup.station.address} /></label>
       <div class="row">
-        <label>City <input bind:value={setup.station.city} /></label>
-        <label>State <input bind:value={setup.station.state} /></label>
+        <label>City * <input bind:value={setup.station.city} /></label>
+        <label>State * <input bind:value={setup.station.state} /></label>
       </div>
       <div class="row">
         <label>Postcode <input bind:value={setup.station.postcode} /></label>
-        <label>Country <input bind:value={setup.station.country} /></label>
+        <label>Country * <input bind:value={setup.station.country} /></label>
       </div>
       {#if !general}
         <label>Location <input bind:value={setup.location} placeholder="e.g. VIC" /></label>

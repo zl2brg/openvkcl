@@ -490,7 +490,9 @@
       {/if}
     {:else}
       <span class="muted"
-        >Space moves between {general ? "call and report " : ""}fields · Enter logs · Esc clears · Alt+arrows change
+        >{general
+          ? "Space moves between call and report fields · Tab also reaches name, comment and Log"
+          : "Space or Tab moves between fields · Tab also reaches Log"} · Enter logs · Esc clears · Alt+arrows change
         band/mode</span
       >
     {/if}

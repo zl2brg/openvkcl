@@ -41,7 +41,9 @@
   let contests = $state<ContestDef[]>([]);
   let contestErrors = $state<string[]>([]);
   let settings = $state<Settings | null>(null);
-  let view = $state<LogView | null>(null);
+  // Raw: the log is only ever replaced, never changed in place, so Svelte
+  // needn't track each of what can be tens of thousands of rows.
+  let view = $state.raw<LogView | null>(null);
   let logVersion = $state(0);
   let rig = $state<RigStatus>({ connected: false, freq_hz: null, band: null, mode: null, rig_mode: null, error: null });
   let version = $state("");
@@ -221,7 +223,13 @@
   }
 
   async function logQso(input: QsoInput) {
-    setView(await api.logQso(input));
+    const logged = await api.logQso(input);
+    if (logged.kind === "view") {
+      setView(logged.view);
+    } else if (view) {
+      // A general log sends just the new contact, the newest in the log.
+      setView({ ...view, qsos: [...view.qsos, logged.row] });
+    }
   }
 
   async function saveQso(qso: Qso) {

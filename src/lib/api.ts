@@ -107,7 +107,6 @@ export interface Qso {
   name: string;
   qth: string;
   comment: string;
-  dxcc: number | null;
   /** ADIF QSL status: Y, N, R (requested), Q (queued), I (ignore) or "". */
   qsl_sent: string;
   qsl_rcvd: string;
@@ -115,8 +114,6 @@ export interface Qso {
   lotw_rcvd: string;
   eqsl_sent: string;
   eqsl_rcvd: string;
-  /** Other ADIF fields from an import. */
-  adif: Record<string, string>;
 }
 
 /** The country a station is in, from the country file. */
@@ -135,8 +132,6 @@ export interface QsoResult {
   points: number;
   new_mult: boolean;
   mult: string;
-  prefix: string;
-  block: number;
   distance_km: number | null;
   next_ok: string | null;
   rework_at: string | null;
@@ -144,6 +139,54 @@ export interface QsoResult {
 
 /** In general logs, rows carry the station's country and whether it's the first contact with it. */
 export type QsoRow = Qso & QsoResult & Partial<Country> & { new_dxcc: boolean };
+
+/**
+ * Values the backend leaves out of a row when they're empty or default, to keep
+ * a long log small to send; `fillRow` puts them back.
+ */
+const ROW_DEFAULTS = {
+  freq_khz: null,
+  sent_nr: "",
+  sent_locator: "",
+  rcvd_nr: "",
+  rcvd_locator: "",
+  operator: "",
+  sent_exch: "",
+  rcvd_exch: "",
+  name: "",
+  qth: "",
+  comment: "",
+  qsl_sent: "",
+  qsl_rcvd: "",
+  lotw_sent: "",
+  lotw_rcvd: "",
+  eqsl_sent: "",
+  eqsl_rcvd: "",
+  new_dxcc: false,
+} as const;
+
+const RESULT_DEFAULTS: QsoResult = {
+  dupe: false,
+  invalid: null,
+  warning: null,
+  points: 0,
+  new_mult: false,
+  mult: "",
+  distance_km: null,
+  next_ok: null,
+  rework_at: null,
+};
+
+export function fillRow(r: Partial<QsoRow>): QsoRow {
+  return { ...ROW_DEFAULTS, ...RESULT_DEFAULTS, ...r } as QsoRow;
+}
+
+function fillView(v: LogView): LogView {
+  return { ...v, qsos: v.qsos.map(fillRow) };
+}
+
+/** Logging a contact: the new row to add at the end, or the whole log. */
+export type Logged = { kind: "row"; row: QsoRow } | { kind: "view"; view: LogView };
 
 export interface GroupScore {
   name: string;
@@ -310,22 +353,30 @@ export const api = {
   saveSettings: (settings: Settings) =>
     invoke<void>("save_settings", { settings }),
   newLog: (path: string, setup: LogSetup) =>
-    invoke<LogView>("new_log", { path, setup }),
-  openLog: (path: string) => invoke<LogView>("open_log", { path }),
+    invoke<LogView>("new_log", { path, setup }).then(fillView),
+  openLog: (path: string) => invoke<LogView>("open_log", { path }).then(fillView),
   closeLog: () => invoke<void>("close_log"),
-  getLog: () => invoke<LogView | null>("get_log"),
-  updateSetup: (setup: LogSetup) => invoke<LogView>("update_setup", { setup }),
-  checkQso: (input: QsoInput) => invoke<CheckResult>("check_qso", { input }),
-  logQso: (input: QsoInput) => invoke<LogView>("log_qso", { input }),
-  updateQso: (qso: Qso) => invoke<LogView>("update_qso", { qso }),
-  deleteQso: (id: number) => invoke<LogView>("delete_qso", { id }),
+  getLog: () => invoke<LogView | null>("get_log").then((v) => v && fillView(v)),
+  updateSetup: (setup: LogSetup) => invoke<LogView>("update_setup", { setup }).then(fillView),
+  checkQso: (input: QsoInput) =>
+    invoke<CheckResult>("check_qso", { input }).then((c) => ({
+      ...c,
+      result: { ...RESULT_DEFAULTS, ...c.result },
+      previous: c.previous.map(fillRow),
+    })),
+  logQso: (input: QsoInput) =>
+    invoke<Logged>("log_qso", { input }).then(
+      (l): Logged => (l.kind === "row" ? { kind: "row", row: fillRow(l.row) } : { kind: "view", view: fillView(l.view) }),
+    ),
+  updateQso: (qso: Qso) => invoke<LogView>("update_qso", { qso }).then(fillView),
+  deleteQso: (id: number) => invoke<LogView>("delete_qso", { id }).then(fillView),
   cabrilloText: () => invoke<string>("cabrillo_text"),
   exportCabrillo: (path: string) => invoke<void>("export_cabrillo", { path }),
   /** Returns how many contacts were exported. */
   exportAdif: (path: string, from: string | null, to: string | null) =>
     invoke<number>("export_adif", { path, from, to }),
   importAdif: (path: string, from: string | null, to: string | null) =>
-    invoke<ImportResult>("import_adif", { path, from, to }),
+    invoke<ImportResult>("import_adif", { path, from, to }).then((r) => ({ ...r, view: fillView(r.view) })),
   ctyStatus: () => invoke<CtyStatus>("cty_status"),
   ctyDownload: () => invoke<CtyStatus>("cty_download"),
   ctyImport: (path: string) => invoke<CtyStatus>("cty_import", { path }),

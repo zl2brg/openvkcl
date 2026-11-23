@@ -95,7 +95,19 @@ pub struct QsoRow {
     #[serde(flatten)]
     country: Option<Country>,
     /// In general logs: the first contact with this country.
+    #[serde(skip_serializing_if = "engine::is_false")]
     new_dxcc: bool,
+}
+
+/// What logging a contact changed: in a general log, usually just the new row
+/// at the end, so a long log isn't sent again for every contact.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Logged {
+    /// The contact is the newest in the log; add this row to the end.
+    Row { row: Box<QsoRow> },
+    /// Anything else: the whole log.
+    View { view: Box<LogView> },
 }
 
 #[derive(Serialize)]
@@ -485,7 +497,7 @@ pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<CheckResu
 }
 
 #[tauri::command]
-pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<LogView> {
+pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<Logged> {
     with_log(&state, |log| {
         if !callsign::is_plausible(&input.call) {
             return Err(format!("'{}' is not a valid callsign", input.call.trim()));
@@ -507,9 +519,28 @@ pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<LogView> {
             let text = format!("worked {} {}", q.band, q.time.format("%H%MZ"));
             state.rig.send(tci::spot(&q.call, tci::spot_mode(modes::contest(&q.mode), hz), hz, &text));
         }
+        let cty = state.cty.lock().unwrap();
+        // A general log's other rows only change if this contact goes before
+        // them (a time entered by hand), which can move a country's NEW badge.
+        let newest = log.qsos.last().is_none_or(|last| (last.time, last.id) < (q.time, q.id));
+        if log.def.general && newest {
+            let country = country_of(&cty, &q);
+            let new_dxcc = country
+                .as_ref()
+                .is_some_and(|c| !log.qsos.iter().any(|p| country_of(&cty, p).is_some_and(|pc| pc.dxcc == c.dxcc)));
+            log.qsos.push(q.clone());
+            return Ok(Logged::Row {
+                row: Box::new(QsoRow {
+                    qso: q,
+                    result: QsoResult::default(),
+                    country,
+                    new_dxcc,
+                }),
+            });
+        }
         log.qsos.push(q);
         log.qsos.sort_by_key(|q| (q.time, q.id));
-        Ok(view(log, &state.cty.lock().unwrap()))
+        Ok(Logged::View { view: Box::new(view(log, &cty)) })
     })
 }
 
@@ -520,8 +551,12 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<LogView> {
         qso.call = callsign::normalize(&qso.call);
         qso.rcvd_locator = geo::normalize_locator(&qso.rcvd_locator);
         qso.sent_locator = geo::normalize_locator(&qso.sent_locator);
-        let old_call = log.qsos.iter().find(|q| q.id == qso.id).map(|q| q.call.clone());
-        if old_call.is_some_and(|c| c != qso.call) {
+        let stored = log.qsos.iter().find(|q| q.id == qso.id).ok_or("QSO not found")?;
+        let old_call = stored.call.clone();
+        // The UI isn't sent these, so keep what's stored.
+        qso.details.adif = stored.details.adif.clone();
+        qso.details.dxcc = stored.details.dxcc;
+        if old_call != qso.call {
             // A new call may be in another country: forget the old one's.
             for k in ["DXCC", "COUNTRY", "CONT", "CQZ", "ITUZ"] {
                 qso.details.adif.remove(k);

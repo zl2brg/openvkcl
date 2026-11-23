@@ -45,14 +45,12 @@
     name: r.name,
     qth: r.qth,
     comment: r.comment,
-    dxcc: r.dxcc,
     qsl_sent: r.qsl_sent,
     qsl_rcvd: r.qsl_rcvd,
     lotw_sent: r.lotw_sent,
     lotw_rcvd: r.lotw_rcvd,
     eqsl_sent: r.eqsl_sent,
     eqsl_rcvd: r.eqsl_rcvd,
-    adif: r.adif,
   });
   let timeText = $state(dateTimeText(r.time));
   let futureTime = $derived(isFutureQsoTime(parseDateTimeText(timeText)));

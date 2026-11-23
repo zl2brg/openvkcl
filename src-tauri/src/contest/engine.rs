@@ -6,24 +6,43 @@ use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone, Default, Serialize)]
+// Defaults are left out when sent to the UI, which fills them back in: most
+// contacts in a long general log have nothing but defaults here.
 pub struct QsoResult {
+    #[serde(skip_serializing_if = "is_false")]
     pub dupe: bool,
     /// Why the contact can't count at all (wrong band, unworkable station...).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub invalid: Option<String>,
     /// Problems with the exchange; the contact still counts as worked.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
+    #[serde(skip_serializing_if = "is_zero")]
     pub points: f64,
+    #[serde(skip_serializing_if = "is_false")]
     pub new_mult: bool,
     /// The multiplier this contact counts towards (prefix or branch), if any.
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub mult: String,
-    pub prefix: String,
+    #[serde(skip_serializing)]
     pub block: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub distance_km: Option<f64>,
     /// For dupes, when this station can next be worked on this band and mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub next_ok: Option<DateTime<Utc>>,
     /// For the latest counted contact with a station on a band and mode, when
     /// it can be worked again there.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub rework_at: Option<DateTime<Utc>>,
+}
+
+pub fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+fn is_zero(x: &f64) -> bool {
+    *x == 0.0
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -343,7 +362,6 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
         let block = def.block_of(setup.start, q.time);
         let prefix = callsign::wpx_prefix(&q.call);
         let mut r = QsoResult {
-            prefix: prefix.clone(),
             block,
             ..Default::default()
         };
@@ -454,10 +472,7 @@ fn evaluate_general(qsos: &[Qso]) -> Evaluation {
         .iter()
         .map(|q| {
             *by_band.entry(q.band.clone()).or_default() += 1;
-            QsoResult {
-                prefix: callsign::wpx_prefix(&q.call),
-                ..Default::default()
-            }
+            QsoResult::default()
         })
         .collect();
     Evaluation {

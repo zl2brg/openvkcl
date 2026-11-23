@@ -141,6 +141,10 @@
 
   let callKey = $derived(call.trim().toUpperCase());
   /** The name the log or QRZ.com already has for this station, used when left blank. */
+  /** Show the voice keyer's F-key bar: kept on this computer between runs. */
+  let showKeyer = $state(localStorage.getItem("showKeyer") !== "0");
+  $effect(() => localStorage.setItem("showKeyer", showKeyer ? "1" : "0"));
+
   let knownName = $derived(check?.known_name ?? qrz?.name ?? "");
   let plausible = $derived(/^[A-Z0-9/]{3,}$/.test(callKey) && /\d/.test(callKey) && /[A-Z]/.test(callKey));
 
@@ -345,6 +349,11 @@
       />
       Enter time
     </label>
+    {#if keyer}
+      <label class="check" title="Show the F-key voice messages. Hidden, the F-keys don't play anything.">
+        <input type="checkbox" bind:checked={showKeyer} /> Voice keys
+      </label>
+    {/if}
     {#if manualTime}
       <input class="mono time" bind:value={timeText} title="QSO time, {zoneLabel()} (YYYY-MM-DD HH:MM)" />
       {#if futureTime}
@@ -528,7 +537,7 @@
     </div>
   {/if}
 
-  {#if keyer}
+  {#if keyer && showKeyer}
     <KeyerBar config={keyer} phone={modeClass(mode) === "PH"} call={callKey} onchange={onkeyerchange} />
   {/if}
 </div>
@@ -575,7 +584,7 @@
     padding: 6px 8px;
   }
   .call input {
-    width: 11ch;
+    width: 13ch;
   }
   .sent input {
     color: var(--muted);
@@ -587,10 +596,10 @@
     width: 11ch;
   }
   .rst input {
-    width: 4.5ch;
+    width: 5.5ch;
   }
   .text input {
-    width: 10ch;
+    width: 16ch;
   }
   .comment {
     flex: 1;

@@ -229,7 +229,7 @@
   .keys {
     flex: 1;
     display: grid;
-    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 4px;
   }
   button {

@@ -437,6 +437,7 @@
             highlight={check?.previous[0]?.call ?? ""}
             bind:range
             onedit={(r) => (editRow = r)}
+            ondelete={(r) => deleteQso(r.id)}
             ondone={refocus}
           />
         </div>

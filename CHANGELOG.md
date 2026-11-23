@@ -7,6 +7,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **General logging (DX)**, a log type for everyday operating and DX
+  chasing, offered first in **New log**. There's no contest period, scoring
+  or dupes, and it covers every band from 2190m up with ADIF modes (SSB, CW,
+  FT8, FT4, RTTY, …). Each contact can have a name, comment and QSL card,
+  LoTW and eQSL status.
+- DXCC countries in general logs. As a call is typed, the entry line shows
+  the station's country, continent and CQ/ITU zones, and whether it's a new
+  country, or new on this band or mode. A band-by-mode grid shows where the
+  station and its country have been worked and confirmed. The side panel
+  counts countries worked and confirmed, by band and by phone/CW/data.
+- From/To dates above a general log's table, which narrow the log and the
+  country counts, e.g. to contacts since 1 January 2026.
+- **Import ADIF…** for any log. Contacts already in the log are skipped, and
+  a contest log only takes contacts from the contest period on its bands and
+  modes. Imports and **Export ADIF…** can be limited to a date range, and
+  ADIF fields the log has no column for are kept and written back out.
+- The cty.csv country file, under **Lookups…**. It and MASTER.SCP download
+  in the background at startup when missing or more than a week old.
 - WIA contests that restart serial numbers at 001 on each band tick
   "Separate serial numbers on each band" when that category is chosen.
   The VHF-UHF Field Day does this for any multi-operator entry, including
@@ -20,6 +38,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Opening a contest log adds the general logging columns without changing
+  its version, so older versions of OpenVKCL can still open it.
 - RST sent is shown before RST received. In a contest, Space moves from the
   call to RST received, then the serial, number and locator. In a general
   log it moves through call, RST sent, RST received, name and comment.

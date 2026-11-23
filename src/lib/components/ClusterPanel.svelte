@@ -15,10 +15,29 @@
     onspot: (spot: Spot) => void;
   } = $props();
 
-  /** Spots older than this drop off the list. */
-  const MAX_AGE_MS = 30 * 60_000;
-  const MAX_SHOWN = 60;
+  const MAX_SHOWN = 100;
   const FILTER_KEY = "openvkcl.cluster.filter";
+  const MINUTES_KEY = "openvkcl.cluster.minutes";
+  /** Time frames offered, in minutes; the app keeps two hours of spots. */
+  const FRAMES = [10, 15, 30, 60, 120];
+
+  function savedMinutes(): number {
+    try {
+      const m = Number(localStorage.getItem(MINUTES_KEY));
+      return FRAMES.includes(m) ? m : 30;
+    } catch {
+      return 30;
+    }
+  }
+  let minutes = $state(savedMinutes());
+  $effect(() => {
+    try {
+      localStorage.setItem(MINUTES_KEY, String(minutes));
+    } catch {
+      // Not stored: the choice lasts until the app closes.
+    }
+  });
+  let frameText = $derived(minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "hour" : `${minutes / 60} hours`);
 
   type Filter = "country" | "band";
   function savedFilter(): Filter {
@@ -53,7 +72,7 @@
     const seen = new Set<string>();
     for (let i = spots.length - 1; i >= 0 && out.length < MAX_SHOWN; i--) {
       const s = spots[i];
-      if (s.dxcc == null || now - new Date(s.time).getTime() > MAX_AGE_MS) continue;
+      if (s.dxcc == null || now - new Date(s.time).getTime() > minutes * 60_000) continue;
       const newCountry = !worked.has(s.dxcc);
       const newBand = !!s.band && !workedBand.has(`${s.dxcc}|${s.band}`);
       if (!newCountry && !(filter === "band" && newBand)) continue;
@@ -72,9 +91,17 @@
   <div class="head">
     <h3>DX cluster</h3>
     <span class="dot" class:on={status.connected} title={status.error ?? status.node}></span>
+    {#if wanted.length}<span class="count" title="Needed spots in this time frame">{wanted.length}{wanted.length === MAX_SHOWN ? "+" : ""}</span>{/if}
+  </div>
+  <div class="options">
     <select bind:value={filter} aria-label="Which spots to show">
       <option value="country">New countries</option>
       <option value="band">New countries and bands</option>
+    </select>
+    <select bind:value={minutes} aria-label="How far back to show spots">
+      {#each FRAMES as m (m)}
+        <option value={m}>{m < 60 ? `Last ${m} min` : m === 60 ? "Last hour" : `Last ${m / 60} hours`}</option>
+      {/each}
     </select>
   </div>
 
@@ -87,7 +114,7 @@
   {:else if unknownCountries}
     <p class="muted">Countries unknown: download the country file under Lookups…</p>
   {:else if !wanted.length}
-    <p class="muted">No spots of {filter === "band" ? "new countries or bands" : "new countries"} in the last 30 minutes.</p>
+    <p class="muted">No spots of {filter === "band" ? "new countries or bands" : "new countries"} in the last {frameText}.</p>
   {/if}
 
   {#if wanted.length}
@@ -142,8 +169,18 @@
   .dot.on {
     background: var(--ok);
   }
-  select {
+  .count {
     margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .options {
+    display: flex;
+    gap: 6px;
+  }
+  select {
+    flex: 1;
+    min-width: 0;
     font-size: 0.75rem;
     padding: 1px 4px;
   }

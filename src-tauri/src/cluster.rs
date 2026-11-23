@@ -18,10 +18,12 @@ use tokio::time::timeout;
 pub const SPOT_EVENT: &str = "cluster-spot";
 pub const STATUS_EVENT: &str = "cluster-status";
 
-/// Spots kept for the UI to catch up with when it starts.
-const KEEP: usize = 500;
+/// Spots kept for the UI to catch up with when it starts: those from the last
+/// two hours (the longest time frame it offers), up to a limit for busy clusters.
+const KEEP_FOR: Days = Days::hours(2);
+const KEEP_MAX: usize = 5000;
 /// Spots asked for after logging in, so the list isn't empty until the next one.
-const BACKLOG: u32 = 50;
+const BACKLOG: u32 = 200;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Log in anyway if the node hasn't asked for a callsign by then.
 const LOGIN_WAIT: Duration = Duration::from_secs(10);
@@ -213,7 +215,8 @@ impl Shared {
                 return;
             }
             spots.push_back(spot.clone());
-            while spots.len() > KEEP {
+            let cutoff = Utc::now() - KEEP_FOR;
+            while spots.len() > KEEP_MAX || spots.front().is_some_and(|s| s.time < cutoff) {
                 spots.pop_front();
             }
         }

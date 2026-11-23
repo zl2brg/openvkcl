@@ -41,8 +41,8 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   and ADIF exports by date (e.g. from 1 January 2026). Countries come from the
   cty.csv country file: download it from **Lookups…**.
 - A DX cluster in general logs, showing only spots of countries you've never
-  worked (or, if you choose, also countries new on the spotted band). Spots
-  older than 30 minutes drop off, and clicking one puts the call, band and mode
+  worked (or, if you choose, also countries new on the spotted band), from
+  the last 10 minutes to 2 hours. Clicking one puts the call, band and mode
   on the entry line. It logs in to the WA9PIE network (hrd.wa9pie.net:8000)
   with your callsign by default; change the cluster or login under **Lookups…**.
 - ADIF import into any log: contacts already in the log are skipped, and a

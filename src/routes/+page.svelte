@@ -50,9 +50,10 @@
   let logVersion = $state(0);
   let rig = $state<RigStatus>({ connected: false, freq_hz: null, band: null, mode: null, rig_mode: null, error: null });
   let clusterStatus = $state<ClusterStatus>({ connected: false, node: "", error: null });
-  /** Recent DX cluster spots, oldest first. */
+  /** Recent DX cluster spots, oldest first: the last two hours, as the backend keeps. */
   let spots = $state<Spot[]>([]);
-  const KEEP_SPOTS = 500;
+  const KEEP_SPOTS = 5000;
+  const KEEP_SPOTS_MS = 2 * 3_600_000;
   let version = $state("");
   let notice = $state("");
   let noticeIsError = $state(false);
@@ -98,7 +99,11 @@
   onMount(() => {
     const unlisten = listen<RigStatus>(RIG_STATUS_EVENT, (e) => (rig = e.payload));
     const unlistenSpots = listen<Spot>(CLUSTER_SPOT_EVENT, (e) => {
-      spots = [...spots.slice(-(KEEP_SPOTS - 1)), e.payload];
+      const cutoff = Date.now() - KEEP_SPOTS_MS;
+      const kept = spots.length && new Date(spots[0].time).getTime() < cutoff
+        ? spots.filter((s) => new Date(s.time).getTime() >= cutoff)
+        : spots;
+      spots = [...kept.slice(-(KEEP_SPOTS - 1)), e.payload];
     });
     const unlistenCluster = listen<ClusterStatus>(CLUSTER_STATUS_EVENT, (e) => (clusterStatus = e.payload));
     (async () => {

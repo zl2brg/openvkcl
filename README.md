@@ -56,6 +56,13 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
 - Radio control for any radio Hamlib supports (just pick the model and serial
   port), FLRig, TCI (cudaSDR, ExpertSDR, Thetis) or a FlexRadio over the
   network: band, mode and frequency follow the radio.
+- A voice keyer on F1–F12, as in N1MM: Run and Search & Pounce sets of
+  recorded messages, played to the radio's sound input with PTT through the
+  radio connection (or its VOX). F1 is CQ, and **Alt+R** repeats it after a
+  pause (**Ctrl+R** sets it) until you type a call or press **Esc**, which also
+  stops transmitting. **Ctrl+Shift+F-key** records a message from the
+  microphone; **Shift+F-key** plays the other set's key and **Alt+U** switches
+  sets. Set the sound devices and messages under **Voice keyer…**.
 - Super Check Partial: matching calls from MASTER.SCP and your log, plus N+1
   (one character different) suggestions, as you type. Download the latest
   MASTER.SCP from **Lookups…** or import your own file. MASTER.SCP and the

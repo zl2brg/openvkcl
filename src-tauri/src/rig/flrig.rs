@@ -50,8 +50,13 @@ impl Client {
     }
 
     async fn call(&self, method: &str) -> Result<String, String> {
+        self.call_with(method, "").await
+    }
+
+    /// Call an XML-RPC method; `params` is the inside of its `<params>` element.
+    async fn call_with(&self, method: &str, params: &str) -> Result<String, String> {
         let body = format!(
-            "<?xml version=\"1.0\"?><methodCall><methodName>{method}</methodName><params></params></methodCall>"
+            "<?xml version=\"1.0\"?><methodCall><methodName>{method}</methodName><params>{params}</params></methodCall>"
         );
         let request = format!(
             "POST /RPC2 HTTP/1.1\r\nHost: {}:{}\r\nContent-Type: text/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -89,6 +94,16 @@ impl Client {
             return Err(format!("FLRig error calling {method}"));
         }
         parse_value(&response).ok_or_else(|| format!("Unexpected reply from FLRig to {method}"))
+    }
+
+    /// Key or unkey the transmitter.
+    pub async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
+        let param = format!("<param><value><i4>{}</i4></value></param>", u8::from(on));
+        // set_ptt returns nothing, which FLRig sends as an empty value.
+        match self.call_with("rig.set_ptt", &param).await {
+            Err(e) if e.starts_with("Unexpected reply") => Ok(()),
+            other => other.map(|_| ()),
+        }
     }
 
     pub async fn poll(&mut self) -> Result<(u64, String), String> {

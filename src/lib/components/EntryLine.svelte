@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import BandGrid from "./BandGrid.svelte";
+  import KeyerBar from "./KeyerBar.svelte";
   import {
     api,
     defaultRst as rstFor,
@@ -14,6 +15,7 @@
     zoneLabel,
     type CheckResult,
     type ContestDef,
+    type KeyerConfig,
     type Need,
     type LogSetup,
     type QrzInfo,
@@ -30,6 +32,8 @@
     logVersion,
     worked,
     qrzEnabled,
+    keyer,
+    onkeyerchange,
     onlog,
     check = $bindable(null),
   }: {
@@ -41,6 +45,9 @@
     /** Calls already in the log, highlighted in the Super Check Partial list. */
     worked: Set<string>;
     qrzEnabled: boolean;
+    /** Voice keyer settings, for the F-key bar; none until settings load. */
+    keyer: KeyerConfig | null;
+    onkeyerchange: (config: KeyerConfig) => void;
     onlog: (input: QsoInput) => Promise<void>;
     check?: CheckResult | null;
   } = $props();
@@ -519,6 +526,10 @@
       {/if}
       <a class="link" href="https://www.qrz.com/db/{callKey}" onclick={openQrz} tabindex="-1">QRZ.com ↗</a>
     </div>
+  {/if}
+
+  {#if keyer}
+    <KeyerBar config={keyer} phone={modeClass(mode) === "PH"} call={callKey} onchange={onkeyerchange} />
   {/if}
 </div>
 

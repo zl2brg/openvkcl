@@ -313,6 +313,51 @@ export interface RigStatus {
   error: string | null;
 }
 
+/** A voice keyer message: its label and its .wav file. */
+export interface KeyerMessage {
+  label: string;
+  /** A name in the voice folder, or a full path; empty when not recorded yet. */
+  file: string;
+}
+
+export interface KeyerConfig {
+  /** Sound output that feeds the radio; empty uses the system default. */
+  output: string;
+  /** Microphone to record from; empty uses the system default. */
+  input: string;
+  /** Key the radio through its connection; otherwise rely on its VOX. */
+  ptt: boolean;
+  ptt_delay_ms: number;
+  /** Pause between the end of one CQ and the next when repeating. */
+  repeat_ms: number;
+  /** Run and S&P messages, F1 to F12. */
+  run: KeyerMessage[];
+  sp: KeyerMessage[];
+}
+
+export interface KeyerStatus {
+  playing: string | null;
+  recording: string | null;
+  /** The file that just finished playing on its own, for CQ repeat. */
+  finished: string | null;
+  error: string | null;
+}
+
+export interface KeyerInfo {
+  devices: { outputs: string[]; inputs: string[] };
+  voice_dir: string;
+  status: KeyerStatus;
+}
+
+export type KeySet = "run" | "sp";
+
+/** The file a key records to in the voice folder, e.g. "run-F1.wav". */
+export function recordingName(set: KeySet, key: number): string {
+  return `${set}-F${key + 1}.wav`;
+}
+
+export const KEYER_STATUS_EVENT = "keyer-status";
+
 export interface QrzConfig {
   enabled: boolean;
   username: string;
@@ -346,6 +391,7 @@ export interface ScpMatches {
 export interface Settings {
   station: Station;
   rig: RigConfig;
+  keyer: KeyerConfig;
   qrz: QrzConfig;
   cluster: ClusterConfig;
   last_log: string | null;
@@ -420,6 +466,13 @@ export const api = {
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),
   rigDisconnect: () => invoke<void>("rig_disconnect"),
   rigStatus: () => invoke<RigStatus>("rig_status"),
+  keyerInfo: () => invoke<KeyerInfo>("keyer_info"),
+  /** Key the radio and play a message file. */
+  keyerPlay: (file: string) => invoke<void>("keyer_play", { file }),
+  /** Stop playing (unkeying the radio) or recording. */
+  keyerStop: () => invoke<void>("keyer_stop"),
+  /** Record from the microphone into a file in the voice folder until stopped. */
+  keyerRecord: (file: string) => invoke<void>("keyer_record", { file }),
   rigModels: () => invoke<RigModel[]>("rig_models"),
   flexDiscover: () => invoke<FlexRadio[]>("flex_discover"),
   serialPorts: () => invoke<SerialPort[]>("serial_ports"),

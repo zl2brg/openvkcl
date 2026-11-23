@@ -6,5 +6,8 @@
        network radios (FlexRadio, TCI, rigctld, FLRig on another computer) need it. -->
   <key>NSLocalNetworkUsageDescription</key>
   <string>OpenVKCL finds and controls radios on your local network, such as FlexRadio and TCI radios.</string>
+  <!-- The voice keyer records its messages from a microphone. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>OpenVKCL records voice keyer messages (CQ, exchange and so on) from your microphone.</string>
 </dict>
 </plist>

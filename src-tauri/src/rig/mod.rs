@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const STATUS_EVENT: &str = "rig-status";
@@ -158,14 +158,52 @@ impl Client {
             _ => Ok(()),
         }
     }
+
+    /// Key or unkey the transmitter.
+    async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
+        match self {
+            Client::Hamlib(c) => c.set_ptt(on).await,
+            Client::Rigctld(c) => c.set_ptt(on).await,
+            Client::Flrig(c) => c.set_ptt(on).await,
+            Client::Tci(c) => c.send(if on { "trx:0,true;" } else { "trx:0,false;" }).await,
+            Client::Flex(c) => c.send(if on { "xmit 1" } else { "xmit 0" }).await,
+        }
+    }
+
+    /// Whether the radio pushes changes (TCI, FlexRadio) rather than being polled.
+    fn pushes(&self) -> bool {
+        matches!(self, Client::Tci(_) | Client::Flex(_))
+    }
+
+    async fn run(&mut self, cmd: Command) -> Result<(), String> {
+        match cmd {
+            Command::Raw(text) => self.send(&text).await,
+            Command::Ptt(on, done) => {
+                let result = self.set_ptt(on).await;
+                let _ = done.send(result.clone());
+                result
+            }
+        }
+    }
 }
+
+/// Something for the radio connection to do between polls.
+enum Command {
+    /// Text for the radio's control server (TCI and FlexRadio spots).
+    Raw(String),
+    /// Key (true) or unkey the transmitter, then say how it went.
+    Ptt(bool, oneshot::Sender<Result<(), String>>),
+}
+
+/// How long a PTT command may take before it's given up on.
+const PTT_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Default)]
 pub struct Rig {
     task: Mutex<Option<JoinHandle<()>>>,
     status: Arc<Mutex<RigStatus>>,
     /// Commands queued for the radio's control server (TCI and FlexRadio spots).
-    outbox: Mutex<Option<mpsc::UnboundedSender<String>>>,
+    outbox: Mutex<Option<mpsc::UnboundedSender<Command>>>,
     /// The rigctld started for the current connection, if any.
     rigctld: Mutex<hamlib::Process>,
 }
@@ -182,23 +220,38 @@ async fn run(
     app: AppHandle,
     cfg: RigConfig,
     shared: Arc<Mutex<RigStatus>>,
-    mut outbox: mpsc::UnboundedReceiver<String>,
+    mut outbox: mpsc::UnboundedReceiver<Command>,
     process: hamlib::Process,
 ) {
     let poll = Duration::from_millis(cfg.poll_ms.clamp(100, 5000));
     loop {
         let error = match Client::connect(&cfg, &app, &process).await {
             Ok(mut client) => loop {
-                let mut sent = Ok(());
-                while let Ok(cmd) = outbox.try_recv() {
-                    sent = sent.and(client.send(&cmd).await);
-                }
-                if let Err(e) = sent {
-                    break e;
-                }
                 let first = !shared.lock().unwrap().connected;
                 let wait = if first { Duration::ZERO } else { poll };
-                match client.poll(wait).await {
+                // Commands (PTT especially) go out as soon as they arrive, not
+                // at the next poll. Radios that push changes are waited on
+                // directly; polled ones only during the pause between polls,
+                // so a question and its answer are never cut apart.
+                let polled = if client.pushes() {
+                    tokio::select! {
+                        Some(cmd) = outbox.recv() => Err(cmd),
+                        result = client.poll(wait) => Ok(result),
+                    }
+                } else {
+                    tokio::select! {
+                        Some(cmd) = outbox.recv() => Err(cmd),
+                        _ = tokio::time::sleep(wait) => Ok(client.poll(Duration::ZERO).await),
+                    }
+                };
+                let polled = match polled {
+                    Ok(result) => result,
+                    Err(cmd) => match client.run(cmd).await {
+                        Ok(()) => continue,
+                        Err(e) => break e,
+                    },
+                };
+                match polled {
                     Ok(None) => publish(
                         &app,
                         &shared,
@@ -253,7 +306,25 @@ impl Rig {
     /// Queue a command for the radio's control server; dropped if none is running.
     pub fn send(&self, cmd: String) {
         if let Some(tx) = self.outbox.lock().unwrap().as_ref() {
-            let _ = tx.send(cmd);
+            let _ = tx.send(Command::Raw(cmd));
+        }
+    }
+
+    /// Key or unkey the transmitter through the radio connection. Returns
+    /// Ok(false) when no radio is connected, so the radio's VOX has to do it.
+    pub async fn ptt(&self, on: bool) -> Result<bool, String> {
+        if !self.status.lock().unwrap().connected {
+            return Ok(false);
+        }
+        let Some(tx) = self.outbox.lock().unwrap().clone() else {
+            return Ok(false);
+        };
+        let (done, result) = oneshot::channel();
+        tx.send(Command::Ptt(on, done)).map_err(|_| "The radio connection has closed".to_string())?;
+        match tokio::time::timeout(PTT_TIMEOUT, result).await {
+            Ok(Ok(r)) => r.map(|()| true),
+            Ok(Err(_)) => Err("The radio connection closed before PTT".into()),
+            Err(_) => Err("The radio didn't answer the PTT command".into()),
         }
     }
 

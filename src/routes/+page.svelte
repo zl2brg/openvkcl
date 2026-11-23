@@ -20,6 +20,7 @@
     type LogView,
     type Qso,
     type QsoInput,
+    type KeyerConfig,
     type QrzConfig,
     type QsoRow,
     type RigStatus,
@@ -33,6 +34,7 @@
   import ScorePanel from "$lib/components/ScorePanel.svelte";
   import SetupDialog from "$lib/components/SetupDialog.svelte";
   import RigDialog from "$lib/components/RigDialog.svelte";
+  import KeyerDialog from "$lib/components/KeyerDialog.svelte";
   import EditQsoDialog from "$lib/components/EditQsoDialog.svelte";
   import CabrilloDialog from "$lib/components/CabrilloDialog.svelte";
   import AboutDialog from "$lib/components/AboutDialog.svelte";
@@ -63,6 +65,7 @@
 
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
   let rigDialog = $state(false);
+  let keyerDialog = $state(false);
   let aboutDialog = $state(false);
   let lookupDialog = $state(false);
   let editRow = $state<QsoRow | null>(null);
@@ -366,6 +369,17 @@
     }
   }
 
+  /** Save the voice keyer settings: from its dialog, a new recording or the repeat time. */
+  async function saveKeyer(keyer: KeyerConfig) {
+    if (!settings) return;
+    try {
+      settings.keyer = keyer;
+      await api.saveSettings($state.snapshot(settings) as Settings);
+    } catch (e) {
+      say(errorText(e), true);
+    }
+  }
+
   async function connectRig(config: Settings["rig"]) {
     try {
       await api.rigConnect(config);
@@ -436,6 +450,9 @@
     {/if}
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
+    <button onclick={() => (keyerDialog = true)} disabled={!settings} title="F-key voice messages and CQ repeat"
+      >Voice keyer…</button
+    >
     <button onclick={() => (lookupDialog = true)} title="Super Check Partial and QRZ.com">Lookups…</button>
     <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
@@ -455,6 +472,8 @@
           {logVersion}
           {worked}
           qrzEnabled={!!settings?.qrz.enabled}
+          keyer={settings?.keyer ?? null}
+          onkeyerchange={saveKeyer}
           onlog={logQso}
         />
         <div class="table">
@@ -518,6 +537,18 @@
     {version}
     onclose={() => {
       aboutDialog = false;
+      refocus();
+    }}
+  />
+{/if}
+
+{#if keyerDialog && settings}
+  <KeyerDialog
+    initial={settings.keyer}
+    radioConnected={rig.connected}
+    onsave={saveKeyer}
+    onclose={() => {
+      keyerDialog = false;
       refocus();
     }}
   />

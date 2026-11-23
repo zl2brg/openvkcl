@@ -49,6 +49,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   marked as spots on the panadapter, and **Find radios** fills in the
   radio's address. On a Mac, allow OpenVKCL under System Settings → Privacy
   & Security → Local Network the first time.
+- A voice keyer on F1–F12 for phone, as in N1MM: Run and S&P sets of .wav
+  messages, played to a chosen sound output with PTT through the radio
+  connection (FlexRadio, TCI, Hamlib, rigctld or FLRig) or the radio's VOX.
+  F1 is CQ; Alt+R repeats it after a pause set with Ctrl+R until a call is
+  typed or Esc is pressed. Ctrl+Shift+F-key records a message from the
+  microphone, Shift+F-key plays the other set's key, and Alt+U switches sets.
+  Devices and messages are under **Voice keyer…**.
 - A warning when a contact's time is more than a minute ahead of the clock,
   on the entry line when **Enter time** is ticked and when editing a contact.
 - A DX cluster tile under **By band** in general logs. It only shows spots

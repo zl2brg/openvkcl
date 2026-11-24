@@ -357,6 +357,16 @@ impl Store {
         Ok(())
     }
 
+    /// Store DXCC numbers worked out for existing contacts, in one transaction.
+    pub fn set_dxcc(&mut self, numbers: &[(i64, u32)]) -> Result<(), String> {
+        let tx = self.conn.transaction().map_err(err)?;
+        for (id, dxcc) in numbers {
+            tx.execute("UPDATE qso SET dxcc = ?2 WHERE id = ?1", params![id, dxcc])
+                .map_err(err)?;
+        }
+        tx.commit().map_err(err)
+    }
+
     /// Deleted contacts stay in the file so a mistaken delete can be recovered.
     pub fn delete(&self, id: i64) -> Result<(), String> {
         self.conn

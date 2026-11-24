@@ -36,7 +36,22 @@
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let hasRework = $derived(contest.rework.kind !== "never");
   let general = $derived(contest.general);
-  let newestFirst = $derived(rows.map((r, i) => ({ r, n: i + 1 })).reverse());
+  // Each row's numbered wrapper is kept while the row and its number stay the
+  // same, so after a change Svelte only redraws the rows that differ, not all of them.
+  const wrappers = new WeakMap<QsoRow, { r: QsoRow; n: number }>();
+  let newestFirst = $derived.by(() => {
+    const out = new Array<{ r: QsoRow; n: number }>(rows.length);
+    for (let i = rows.length - 1, j = 0; i >= 0; i--, j++) {
+      const r = rows[i];
+      let w = wrappers.get(r);
+      if (!w || w.n !== i + 1) {
+        w = { r, n: i + 1 };
+        wrappers.set(r, w);
+      }
+      out[j] = w;
+    }
+    return out;
+  });
 
   let search = $state("");
   let searchBox: HTMLInputElement;

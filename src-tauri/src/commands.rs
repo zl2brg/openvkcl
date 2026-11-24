@@ -1,6 +1,6 @@
 use crate::cluster::{Cluster, ClusterConfig, ClusterStatus, Spot};
 use crate::contest::def::ExchField;
-use crate::contest::engine::{self, QsoResult, Score};
+use crate::contest::engine::{self, Evaluation, QsoResult, Score};
 use crate::contest::{self, ContestDef};
 use crate::dxcc::{self, Country, Cty};
 use crate::export::{adif, cabrillo, scoresheet};
@@ -29,6 +29,65 @@ pub struct OpenLog {
     setup: LogSetup,
     def: ContestDef,
     qsos: Vec<Qso>,
+    /// The log's scoring, kept until the log next changes: worked out once
+    /// rather than on every keystroke.
+    eval: Option<Evaluation>,
+}
+
+impl OpenLog {
+    fn new(path: PathBuf, store: Store, setup: LogSetup, def: ContestDef, qsos: Vec<Qso>) -> Self {
+        OpenLog {
+            path,
+            store,
+            setup,
+            def,
+            qsos,
+            eval: None,
+        }
+    }
+
+    fn evaluation(&mut self) -> &Evaluation {
+        if self.eval.is_none() {
+            self.eval = Some(engine::evaluate(&self.def, &self.setup, &self.qsos));
+        }
+        self.eval.as_ref().unwrap()
+    }
+
+    /// Call after any change to the contacts or setup.
+    fn changed(&mut self) {
+        self.eval = None;
+    }
+
+    /// Store the DXCC number of contacts that don't have one yet (imported
+    /// before the country file was there), so their countries aren't looked
+    /// up again every time. Returns how many were filled in.
+    fn fill_in_countries(&mut self, cty: &Cty) -> Result<usize, String> {
+        if !self.def.general || cty.is_empty() {
+            return Ok(0);
+        }
+        let mut numbers = Vec::new();
+        for q in self.qsos.iter_mut().filter(|q| q.details.dxcc.is_none()) {
+            if let Some(c) = cty.lookup(&q.call) {
+                q.details.dxcc = Some(c.dxcc);
+                numbers.push((q.id, c.dxcc));
+            }
+        }
+        if !numbers.is_empty() {
+            self.store.set_dxcc(&numbers)?;
+        }
+        Ok(numbers.len())
+    }
+}
+
+/// What editing or deleting a contact changed: in a general log, just the
+/// rows that differ, so a long log isn't sent again.
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum Changed {
+    /// Replace these rows (same id), and remove `removed` if set.
+    Rows { rows: Vec<QsoRow>, removed: Option<i64> },
+    /// Anything else: the whole log.
+    View { view: Box<LogView> },
 }
 
 pub struct AppState {
@@ -198,6 +257,31 @@ pub struct CheckResult {
     previous: Vec<QsoRow>,
 }
 
+/// A contact's DXCC number: stored with it, else the country file's answer.
+fn dxcc_of(cty: &Cty, q: &Qso) -> Option<u32> {
+    q.details.dxcc.or_else(|| cty.lookup(&q.call).map(|c| c.dxcc))
+}
+
+/// The contacts that are the first with their country, which show NEW.
+fn first_of_country(log: &OpenLog, cty: &Cty) -> std::collections::HashSet<i64> {
+    let mut seen = std::collections::HashSet::new();
+    log.qsos
+        .iter()
+        .filter(|q| dxcc_of(cty, q).is_some_and(|d| seen.insert(d)))
+        .map(|q| q.id)
+        .collect()
+}
+
+/// A general log's row for one contact.
+fn general_row(cty: &Cty, q: &Qso, new_dxcc: bool) -> QsoRow {
+    QsoRow {
+        country: country_of(cty, q),
+        qso: q.clone(),
+        result: QsoResult::default(),
+        new_dxcc,
+    }
+}
+
 /// The country of a contact: the DXCC number it was logged or imported with, else
 /// the country file's answer for the call.
 fn country_of(cty: &Cty, q: &Qso) -> Option<Country> {
@@ -218,12 +302,12 @@ fn confirmed(q: &Qso) -> bool {
 }
 
 /// Rows for the log, with countries in general logs.
-fn rows(log: &OpenLog, cty: &Cty, results: Vec<QsoResult>) -> Vec<QsoRow> {
+fn rows(log: &OpenLog, cty: &Cty, results: &[QsoResult]) -> Vec<QsoRow> {
     let mut seen = std::collections::HashSet::new();
     log.qsos
         .iter()
         .cloned()
-        .zip(results)
+        .zip(results.iter().cloned())
         .map(|(qso, result)| {
             let country = if log.def.general { country_of(cty, &qso) } else { None };
             let new_dxcc = country.as_ref().is_some_and(|c| seen.insert(c.dxcc));
@@ -243,7 +327,7 @@ fn dx_check(log: &OpenLog, cty: &Cty, draft: &Qso) -> Option<DxCheck> {
     let (mut any, mut band, mut mode) = (Need::New, Need::New, Need::New);
     let mut slots: std::collections::BTreeMap<(String, &'static str), Need> = Default::default();
     for q in &log.qsos {
-        if country_of(cty, q).is_none_or(|c| c.dxcc != country.dxcc) {
+        if dxcc_of(cty, q) != Some(country.dxcc) {
             continue;
         }
         let need = if confirmed(q) { Need::Confirmed } else { Need::Worked };
@@ -269,15 +353,16 @@ fn dx_check(log: &OpenLog, cty: &Cty, draft: &Qso) -> Option<DxCheck> {
     })
 }
 
-fn view(log: &OpenLog, cty: &Cty) -> LogView {
-    let eval = engine::evaluate(&log.def, &log.setup, &log.qsos);
-    let qsos = rows(log, cty, eval.results);
+fn view(log: &mut OpenLog, cty: &Cty) -> LogView {
+    let score = log.evaluation().score.clone();
+    let log = &*log;
+    let qsos = rows(log, cty, &log.eval.as_ref().unwrap().results);
     LogView {
         path: log.path.display().to_string(),
         setup: log.setup.clone(),
         contest: log.def.clone(),
         qsos,
-        score: eval.score,
+        score,
     }
 }
 
@@ -374,14 +459,8 @@ pub fn new_log(state: State<AppState>, path: String, setup: LogSetup) -> CmdResu
     let def = state.find_contest(&setup.contest_id)?;
     let path = PathBuf::from(path);
     let store = Store::create(&path, &setup)?;
-    let log = OpenLog {
-        path: path.clone(),
-        store,
-        setup,
-        def,
-        qsos: Vec::new(),
-    };
-    let v = view(&log, &state.cty.lock().unwrap());
+    let mut log = OpenLog::new(path.clone(), store, setup, def, Vec::new());
+    let v = view(&mut log, &state.cty.lock().unwrap());
     *state.log.lock().unwrap() = Some(log);
     state.remember_log(&path);
     Ok(v)
@@ -399,14 +478,11 @@ pub fn open_log(state: State<AppState>, path: String) -> CmdResult<LogView> {
         store.move_numbers_to_exch()?;
     }
     let qsos = store.qsos()?;
-    let log = OpenLog {
-        path: path.clone(),
-        store,
-        setup,
-        def,
-        qsos,
-    };
-    let v = view(&log, &state.cty.lock().unwrap());
+    let mut log = OpenLog::new(path.clone(), store, setup, def, qsos);
+    let cty = state.cty.lock().unwrap();
+    log.fill_in_countries(&cty)?;
+    let v = view(&mut log, &cty);
+    drop(cty);
     *state.log.lock().unwrap() = Some(log);
     state.remember_log(&path);
     Ok(v)
@@ -419,7 +495,7 @@ pub fn close_log(state: State<AppState>) {
 
 #[tauri::command]
 pub fn get_log(state: State<AppState>) -> Option<LogView> {
-    state.log.lock().unwrap().as_ref().map(|l| view(l, &state.cty.lock().unwrap()))
+    state.log.lock().unwrap().as_mut().map(|l| view(l, &state.cty.lock().unwrap()))
 }
 
 #[tauri::command]
@@ -429,6 +505,7 @@ pub fn update_setup(state: State<AppState>, setup: LogSetup) -> CmdResult<LogVie
         log.store.save_setup(&setup)?;
         log.setup = setup;
         log.def = def;
+        log.changed();
         Ok(view(log, &state.cty.lock().unwrap()))
     })
 }
@@ -473,7 +550,8 @@ pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<CheckResu
             (QsoResult::default(), vec![QsoResult::default(); log.qsos.len()], dx)
         } else {
             let result = engine::check(&log.def, &log.setup, &log.qsos, &draft);
-            (result, engine::evaluate(&log.def, &log.setup, &log.qsos).results, None)
+            // The log's own scoring is kept from the last change.
+            (result, log.evaluation().results.clone(), None)
         };
         let previous = log
             .qsos
@@ -534,8 +612,9 @@ pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<Logged> {
             let country = country_of(&cty, &q);
             let new_dxcc = country
                 .as_ref()
-                .is_some_and(|c| !log.qsos.iter().any(|p| country_of(&cty, p).is_some_and(|pc| pc.dxcc == c.dxcc)));
+                .is_some_and(|c| !log.qsos.iter().any(|p| dxcc_of(&cty, p) == Some(c.dxcc)));
             log.qsos.push(q.clone());
+            log.changed();
             return Ok(Logged::Row {
                 row: Box::new(QsoRow {
                     qso: q,
@@ -547,12 +626,13 @@ pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<Logged> {
         }
         log.qsos.push(q);
         log.qsos.sort_by_key(|q| (q.time, q.id));
+        log.changed();
         Ok(Logged::View { view: Box::new(view(log, &cty)) })
     })
 }
 
 #[tauri::command]
-pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<LogView> {
+pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Changed> {
     with_log(&state, |log| {
         let mut qso = qso;
         qso.call = callsign::normalize(&qso.call);
@@ -574,7 +654,12 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<LogView> {
                 None
             };
         }
+        // A new time can move the contact, so only an edit in place sends just rows.
+        let moved = stored.time != qso.time;
         log.store.update(&qso)?;
+        let cty = state.cty.lock().unwrap();
+        let before = first_of_country(log, &cty);
+        let id = qso.id;
         let slot = log
             .qsos
             .iter_mut()
@@ -582,16 +667,50 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<LogView> {
             .ok_or("QSO not found")?;
         *slot = qso;
         log.qsos.sort_by_key(|q| (q.time, q.id));
-        Ok(view(log, &state.cty.lock().unwrap()))
+        log.changed();
+        if log.def.general && !moved {
+            return Ok(changed_rows(log, &cty, &before, Some(id), None));
+        }
+        Ok(Changed::View {
+            view: Box::new(view(log, &cty)),
+        })
     })
 }
 
+/// The rows of a general log that an edit or delete changed: `edited`, and any
+/// whose NEW badge came or went.
+fn changed_rows(
+    log: &OpenLog,
+    cty: &Cty,
+    before: &std::collections::HashSet<i64>,
+    edited: Option<i64>,
+    removed: Option<i64>,
+) -> Changed {
+    let after = first_of_country(log, cty);
+    let rows = log
+        .qsos
+        .iter()
+        .filter(|q| Some(q.id) == edited || before.contains(&q.id) != after.contains(&q.id))
+        .map(|q| general_row(cty, q, after.contains(&q.id)))
+        .collect();
+    Changed::Rows { rows, removed }
+}
+
 #[tauri::command]
-pub fn delete_qso(state: State<AppState>, id: i64) -> CmdResult<LogView> {
+pub fn delete_qso(state: State<AppState>, id: i64) -> CmdResult<Changed> {
     with_log(&state, |log| {
         log.store.delete(id)?;
+        let cty = state.cty.lock().unwrap();
+        let before = first_of_country(log, &cty);
         log.qsos.retain(|q| q.id != id);
-        Ok(view(log, &state.cty.lock().unwrap()))
+        log.changed();
+        if log.def.general {
+            return Ok(changed_rows(log, &cty, &before, None, Some(id)));
+        }
+        // A contest log is scored again: other contacts' dupes and multipliers can change.
+        Ok(Changed::View {
+            view: Box::new(view(log, &cty)),
+        })
     })
 }
 
@@ -657,6 +776,7 @@ pub fn import_adif(
         log.store.insert_all(&mut qsos)?;
         log.qsos.extend(qsos);
         log.qsos.sort_by_key(|q| (q.time, q.id));
+        log.changed();
         Ok(ImportResult {
             summary,
             view: view(log, &state.cty.lock().unwrap()),
@@ -807,6 +927,9 @@ fn install_cty(state: &AppState, text: &str) -> CmdResult<CtyStatus> {
     }
     std::fs::write(&state.cty_path, text).map_err(|e| format!("{}: {e}", state.cty_path.display()))?;
     *state.cty.lock().unwrap() = cty;
+    if let Some(log) = state.log.lock().unwrap().as_mut() {
+        log.fill_in_countries(&state.cty.lock().unwrap())?;
+    }
     Ok(cty_status_of(state))
 }
 
@@ -884,4 +1007,126 @@ pub fn cluster_status(state: State<AppState>) -> ClusterStatus {
 #[tauri::command]
 pub fn cluster_spots(state: State<AppState>) -> Vec<Spot> {
     state.cluster.spots()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Station;
+    use chrono::TimeZone;
+
+    const CTY: &str = "JA,Japan,339,AS,25,45,36.40,-138.38,-9.0,JA;\nK,United States,291,NA,5,8,37.60,91.87,5.0,K W;\n";
+
+    fn general_log(calls: &[&str]) -> OpenLog {
+        let def = contest::load_all(None).0.into_iter().find(|d| d.general).unwrap();
+        let start = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+        let setup = LogSetup {
+            contest_id: def.id.clone(),
+            start,
+            station: Station {
+                callsign: "VK2YI".into(),
+                ..Default::default()
+            },
+            sent_number: String::new(),
+            serial_per_band: false,
+            utc_offset_minutes: 600,
+            location: String::new(),
+            categories: Default::default(),
+            bonus_bands: Default::default(),
+            soapbox: String::new(),
+        };
+        let dir = std::env::temp_dir().join(format!("openvkcl-cmd-{}-{}", std::process::id(), calls.join("")));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("log.ovkcl");
+        let mut store = Store::create(&path, &setup).unwrap();
+        let mut qsos: Vec<Qso> = calls
+            .iter()
+            .enumerate()
+            .map(|(i, c)| Qso {
+                id: 0,
+                time: start + chrono::Duration::minutes(i as i64),
+                call: (*c).into(),
+                band: "20m".into(),
+                mode: "SSB".into(),
+                freq_khz: None,
+                sent_rst: "59".into(),
+                sent_nr: String::new(),
+                sent_locator: String::new(),
+                rcvd_rst: "59".into(),
+                rcvd_nr: String::new(),
+                rcvd_locator: String::new(),
+                operator: String::new(),
+                sent_exch: String::new(),
+                rcvd_exch: String::new(),
+                details: Default::default(),
+            })
+            .collect();
+        store.insert_all(&mut qsos).unwrap();
+        OpenLog::new(path, store, setup, def, qsos)
+    }
+
+    fn ids(c: &Changed) -> (Vec<(String, bool)>, Option<i64>) {
+        match c {
+            Changed::Rows { rows, removed } => (
+                rows.iter().map(|r| (r.qso.call.clone(), r.new_dxcc)).collect(),
+                *removed,
+            ),
+            Changed::View { .. } => panic!("expected rows"),
+        }
+    }
+
+    #[test]
+    fn countries_are_stored_once() {
+        let cty = Cty::parse(CTY);
+        let mut log = general_log(&["JA1AA", "W1AW", "ZZ9ZZ"]);
+        // ZZ9ZZ is in no country, so it stays unknown.
+        assert_eq!(log.fill_in_countries(&cty).unwrap(), 2);
+        assert_eq!(log.fill_in_countries(&cty).unwrap(), 0);
+        let reopened = log.store.qsos().unwrap();
+        let stored: Vec<Option<u32>> = reopened.iter().map(|q| q.details.dxcc).collect();
+        assert_eq!(stored, vec![Some(339), Some(291), None]);
+    }
+
+    #[test]
+    fn deleting_moves_the_new_badge() {
+        let cty = Cty::parse(CTY);
+        let mut log = general_log(&["JA1AA", "JA2BB", "W1AW"]);
+        log.fill_in_countries(&cty).unwrap();
+        let before = first_of_country(&log, &cty);
+        let first = log.qsos[0].id;
+        log.qsos.retain(|q| q.id != first);
+        // JA2BB is now the first Japan contact; W1AW is unchanged and not sent.
+        let (rows, removed) = ids(&changed_rows(&log, &cty, &before, None, Some(first)));
+        assert_eq!(rows, vec![("JA2BB".to_string(), true)]);
+        assert_eq!(removed, Some(first));
+    }
+
+    #[test]
+    fn editing_a_call_sends_the_rows_it_changes() {
+        let cty = Cty::parse(CTY);
+        let mut log = general_log(&["W1AW", "JA1AA", "W2XX"]);
+        log.fill_in_countries(&cty).unwrap();
+        let before = first_of_country(&log, &cty);
+        // W1AW becomes a Japanese call: it's now the first Japan contact, JA1AA
+        // loses its NEW badge and W2XX gains the United States one.
+        let id = log.qsos[0].id;
+        log.qsos[0].call = "JA9ZZ".into();
+        log.qsos[0].details.dxcc = Some(339);
+        let (rows, _) = ids(&changed_rows(&log, &cty, &before, Some(id), None));
+        assert_eq!(
+            rows,
+            vec![("JA9ZZ".to_string(), true), ("JA1AA".to_string(), false), ("W2XX".to_string(), true)]
+        );
+    }
+
+    #[test]
+    fn scoring_is_kept_until_the_log_changes() {
+        let mut log = general_log(&["JA1AA"]);
+        assert_eq!(log.evaluation().score.qsos, 1);
+        log.qsos.push(log.qsos[0].clone());
+        // Still the kept scoring until told the log changed.
+        assert_eq!(log.evaluation().score.qsos, 1);
+        log.changed();
+        assert_eq!(log.evaluation().score.qsos, 2);
+    }
 }

@@ -32,6 +32,13 @@ pub fn run() {
             let rig = state.settings.lock().unwrap().rig.clone();
             app.manage(state);
             app.state::<AppState>().rig.start(app.handle().clone(), rig);
+            // Log in to QRZ.com now, so the first call typed only waits for its lookup.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = handle.state::<AppState>();
+                let cfg = state.settings.lock().unwrap().qrz.clone();
+                state.qrz.warm_up(&cfg, &commands::qrz_agent()).await;
+            });
             let (cluster, login) = {
                 let s = app.state::<AppState>().settings.lock().unwrap().clone();
                 (s.cluster.clone(), commands::cluster_login(&s))

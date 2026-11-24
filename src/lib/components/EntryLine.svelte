@@ -131,6 +131,14 @@
   let scp = $state<ScpMatches | null>(null);
   let qrz = $state<QrzInfo | null>(null);
   let qrzError = $state("");
+  /** The last contact with this station that has a name or QTH, from the log. */
+  let fromLog = $derived.by(() => {
+    const previous = check?.previous ?? [];
+    for (let i = previous.length - 1; i >= 0; i--) {
+      if (previous[i].name || previous[i].qth) return previous[i];
+    }
+    return null;
+  });
 
   let callKey = $derived(call.trim().toUpperCase());
   /** The name the log or QRZ.com already has for this station, used when left blank. */
@@ -165,7 +173,8 @@
       } catch (e) {
         if (target === untrack(() => callKey)) qrzError = errorText(e);
       }
-    }, 500);
+      // Soon after typing stops: QRZ.com itself takes most of a second to answer.
+    }, 200);
     return () => clearTimeout(timer);
   });
 
@@ -516,6 +525,11 @@
         {/if}
       {:else if qrzError}
         <span class="muted">QRZ: {qrzError}</span>
+      {:else if fromLog}
+        <!-- Shown at once, until QRZ.com answers. -->
+        {#if fromLog.name}<strong>{fromLog.name}</strong>{/if}
+        {#if fromLog.qth}<span>{fromLog.qth}</span>{/if}
+        <span class="muted">from your log</span>
       {/if}
       <a class="link" href="https://www.qrz.com/db/{callKey}" onclick={openQrz} tabindex="-1">QRZ.com ↗</a>
     </div>

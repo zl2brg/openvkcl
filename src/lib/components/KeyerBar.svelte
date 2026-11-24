@@ -163,11 +163,14 @@
 <svelte:window onkeydowncapture={onkeydown} />
 
 <div class="bar" class:off={!phone}>
-  <button
-    class="set"
-    onclick={() => (set = set === "run" ? "sp" : "run")}
-    title="Run or Search & Pounce messages (Alt+U)">{set === "run" ? "Run" : "S&P"}</button
-  >
+  <div class="sets" role="radiogroup" aria-label="Operating mode" title="Run or Search & Pounce messages (Alt+U)">
+    <button class="set" class:on={set === "run"} role="radio" aria-checked={set === "run"} onclick={() => (set = "run")} tabindex="-1"
+      >Run</button
+    >
+    <button class="set" class:on={set === "sp"} role="radio" aria-checked={set === "sp"} onclick={() => (set = "sp")} tabindex="-1"
+      >S&amp;P</button
+    >
+  </div>
   <div class="keys">
     {#each messages as m, i (i)}
       {@const file = set === "run" ? config.run[i]?.file : config.sp[i]?.file}
@@ -269,9 +272,20 @@
     border-color: var(--bad);
     box-shadow: inset 0 0 0 1px var(--bad);
   }
+  .sets {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
   .set {
+    flex: 1;
     min-width: 3.4em;
     font-weight: 700;
+  }
+  .set.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
   }
   .repeat.on {
     background: var(--accent);

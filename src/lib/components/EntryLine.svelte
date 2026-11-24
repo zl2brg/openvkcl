@@ -490,8 +490,10 @@
     {/if}
   </div>
 
-  {#if callKey && scp && (scp.partial.length || scp.near.length)}
-    <div class="scp mono" aria-label="Super Check Partial">
+  <!-- The suggestions and QRZ rows keep their space when empty, so the panel
+       doesn't change height as a call is typed and the log below stays put. -->
+  <div class="scp mono" aria-label="Super Check Partial">
+    {#if callKey && scp && (scp.partial.length || scp.near.length)}
       {#each scp.partial as c (c)}
         <button tabindex="-1" class:worked={worked.has(c)} onclick={() => pick(c)} title={worked.has(c) ? "In log" : ""}>{c}</button>
       {/each}
@@ -501,11 +503,11 @@
           <button tabindex="-1" class="near" class:worked={worked.has(c)} onclick={() => pick(c)}>{c}</button>
         {/each}
       {/if}
-    </div>
-  {/if}
+    {/if}
+  </div>
 
-  {#if plausible}
-    <div class="qrz">
+  <div class="qrz">
+    {#if plausible}
       {#if scp?.exact}<span class="ok" title="In MASTER.SCP or your log">✓ known call</span>{/if}
       {#if qrz}
         {@const place = [qrz.city, qrz.state, qrz.country].filter(Boolean).join(", ")}
@@ -524,8 +526,8 @@
         <span class="muted">QRZ: {qrzError}</span>
       {/if}
       <a class="link" href="https://www.qrz.com/db/{callKey}" onclick={openQrz} tabindex="-1">QRZ.com ↗</a>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -608,11 +610,13 @@
     margin-left: auto;
   }
   .status {
-    min-height: 1.4rem;
+    height: 1.4rem;
     display: flex;
     gap: 12px;
     align-items: center;
     font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
   }
   .strong {
     font-weight: 700;
@@ -640,7 +644,9 @@
     flex-wrap: wrap;
     gap: 4px;
     align-items: center;
-    max-height: 4.2rem;
+    align-content: flex-start;
+    /* Two lines of suggestions, whether or not there are any. */
+    height: 3.6rem;
     overflow: hidden;
   }
   .scp button,
@@ -665,6 +671,9 @@
     gap: 12px;
     align-items: center;
     font-size: 0.9rem;
+    height: 1.6rem;
+    white-space: nowrap;
+    overflow: hidden;
   }
   .qrz .link {
     margin-left: auto;

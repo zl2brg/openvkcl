@@ -546,6 +546,7 @@
   <KeyerDialog
     initial={settings.keyer}
     radioConnected={rig.connected}
+    tci={settings.rig.kind === "tci"}
     onsave={saveKeyer}
     onclose={() => {
       keyerDialog = false;

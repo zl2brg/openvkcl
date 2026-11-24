@@ -18,11 +18,14 @@
   let {
     initial,
     radioConnected,
+    tci = false,
     onsave,
     onclose,
   }: {
     initial: KeyerConfig;
     radioConnected: boolean;
+    /** The radio is connected by TCI, which carries the message audio itself. */
+    tci?: boolean;
     onsave: (config: KeyerConfig) => void;
     onclose: () => void;
   } = $props();
@@ -144,14 +147,19 @@
       </label>
     </div>
     <p class="hint">
-      {#if config.ptt && !radioConnected}
+      {#if config.ptt && tci && radioConnected}
+        The radio is connected by TCI, so messages are sent over TCI as the transmit audio and the sound output
+        isn't used. Esc stops at once. With AetherSDR, turn its TCI server on and DAX on, with the DAX TX stream
+        Selected.
+      {:else if config.ptt && !radioConnected}
         No radio is connected, so PTT can't be sent: the radio's VOX will have to key it.
       {:else if config.ptt}
-        OpenVKCL keys the radio, waits the PTT delay, plays the message and unkeys. Esc stops at once.
+        OpenVKCL keys the radio, waits the PTT delay, plays the message on the sound output and unkeys. Esc stops
+        at once. For a FlexRadio with AetherSDR, connect by TCI under Radio… instead: AetherSDR only takes voice
+        messages that way.
       {:else}
         OpenVKCL only plays the message; the radio's VOX keys it.
       {/if}
-      For a FlexRadio, choose its DAX transmit audio as the output.
     </p>
 
     <div class="tabs">

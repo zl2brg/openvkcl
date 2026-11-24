@@ -132,9 +132,42 @@ pub fn resolve(voice_dir: &Path, file: &str) -> PathBuf {
 }
 
 /// Play `path` on the named output (or the default) until it ends or `stop` is set.
+/// A recording decoded to mono samples at `rate` Hz.
+pub fn load_mono(path: &Path, rate: u32) -> Result<Vec<f32>, String> {
+    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let decoder = rodio::Decoder::try_from(file).map_err(|e| format!("Can't read {}: {e}", path.display()))?;
+    let channels = decoder.channels().get() as usize;
+    let from = decoder.sample_rate().get();
+    let samples: Vec<f32> = decoder.collect();
+    let mono: Vec<f32> = samples
+        .chunks(channels)
+        .map(|frame| frame.iter().sum::<f32>() / frame.len() as f32)
+        .collect();
+    Ok(resample(&mono, from, rate))
+}
+
+/// Change the sample rate by linear interpolation: plenty for a voice message.
+pub fn resample(input: &[f32], from: u32, to: u32) -> Vec<f32> {
+    if from == to || input.is_empty() {
+        return input.to_vec();
+    }
+    let step = from as f64 / to as f64;
+    let len = ((input.len() as f64) / step).floor() as usize;
+    (0..len)
+        .map(|i| {
+            let pos = i as f64 * step;
+            let k = pos as usize;
+            let frac = (pos - k as f64) as f32;
+            let a = input[k];
+            let b = *input.get(k + 1).unwrap_or(&a);
+            a + (b - a) * frac
+        })
+        .collect()
+}
+
+/// Play `path` on the named output (or the default) until it ends or `stop` is set.
 fn play_blocking(path: &Path, output: &str, stop: &AtomicBool) -> Result<(), String> {
     use rodio::DeviceSinkBuilder;
-    let file = std::fs::File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let mut sink = match output_devices().into_iter().find(|d| !output.is_empty() && device_name(d) == output) {
         Some(device) => DeviceSinkBuilder::from_device(device).and_then(|b| b.open_stream()),
         None if output.is_empty() => DeviceSinkBuilder::open_default_sink(),
@@ -142,8 +175,17 @@ fn play_blocking(path: &Path, output: &str, stop: &AtomicBool) -> Result<(), Str
     }
     .map_err(|e| format!("Can't open the sound output: {e}"))?;
     sink.log_on_drop(false);
-    let player = rodio::play(sink.mixer(), std::io::BufReader::new(file))
-        .map_err(|e| format!("Can't play {}: {e}", path.display()))?;
+    // The mixer plays at the device's own rate and doesn't convert, so convert
+    // the message to it first; otherwise a 44.1 kHz recording on a 24 kHz
+    // device plays slow and low.
+    let (channels, rate) = (sink.config().channel_count(), sink.config().sample_rate());
+    let mono = load_mono(path, rate.get())?;
+    let frames: Vec<f32> = mono
+        .iter()
+        .flat_map(|&s| std::iter::repeat_n(s, channels.get() as usize))
+        .collect();
+    let player = rodio::Player::connect_new(sink.mixer());
+    player.append(rodio::buffer::SamplesBuffer::new(channels, rate, frames));
     while !player.empty() && !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -263,25 +305,18 @@ impl Keyer {
                 return;
             }
             publish(&app, &shared, KeyerStatus { playing: Some(name.clone()), ..Default::default() });
-            let keyed = if cfg.ptt { rig.ptt(true).await } else { Ok(false) };
-            let result = match keyed {
-                Err(e) => Err(format!("PTT: {e}")),
-                Ok(keyed) => {
-                    if keyed {
-                        tokio::time::sleep(Duration::from_millis(cfg.ptt_delay_ms)).await;
-                    }
-                    let (output, stop2) = (cfg.output.clone(), stop.clone());
-                    let played = tauri::async_runtime::spawn_blocking(move || play_blocking(&path, &output, &stop2))
-                        .await
-                        .unwrap_or_else(|e| Err(e.to_string()));
-                    if keyed && let Err(e) = rig.ptt(false).await {
-                        // Make sure the radio isn't left transmitting.
-                        let _ = rig.ptt(false).await;
-                        played.and(Err(format!("PTT off: {e}")))
-                    } else {
-                        played
-                    }
+            let result = if cfg.ptt && rig.carries_audio() {
+                // A TCI server (AetherSDR, ExpertSDR, Thetis) takes the message as
+                // the transmit audio itself, keyed up by the same connection.
+                let decoded = tauri::async_runtime::spawn_blocking(move || load_mono(&path, crate::rig::tci::TX_RATE))
+                    .await
+                    .unwrap_or_else(|e| Err(e.to_string()));
+                match decoded {
+                    Ok(audio) => rig.transmit(audio, stop.clone()).await,
+                    Err(e) => Err(e),
                 }
+            } else {
+                play_with_ptt(&rig, &cfg, path, stop.clone()).await
             };
             let stopped = stop.load(Ordering::Relaxed);
             publish(
@@ -295,6 +330,32 @@ impl Keyer {
             );
         });
     }
+}
+
+/// Key the radio (unless relying on its VOX), play the message on the sound
+/// output, and unkey.
+async fn play_with_ptt(rig: &Rig, cfg: &KeyerConfig, path: PathBuf, stop: Arc<AtomicBool>) -> Result<(), String> {
+    let keyed = if cfg.ptt {
+        rig.ptt(true).await.map_err(|e| format!("PTT: {e}"))?
+    } else {
+        false
+    };
+    if keyed {
+        tokio::time::sleep(Duration::from_millis(cfg.ptt_delay_ms)).await;
+    }
+    let output = cfg.output.clone();
+    let played = tauri::async_runtime::spawn_blocking(move || play_blocking(&path, &output, &stop))
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
+    if keyed && let Err(e) = rig.ptt(false).await {
+        // Make sure the radio isn't left transmitting.
+        let _ = rig.ptt(false).await;
+        return played.and(Err(format!("PTT off: {e}")));
+    }
+    played
+}
+
+impl Keyer {
 
     /// Record from the microphone into `path` until stopped.
     pub fn record(&self, app: AppHandle, cfg: KeyerConfig, path: PathBuf) {
@@ -331,5 +392,33 @@ mod tests {
         // Settings from before the keyer get its defaults.
         let s: KeyerConfig = serde_json::from_str("{}").unwrap();
         assert_eq!(s, KeyerConfig::default());
+    }
+
+    #[test]
+    fn resampling() {
+        // 44.1 kHz to 48 kHz keeps the length in time and the shape.
+        let ramp: Vec<f32> = (0..441).map(|i| i as f32 / 441.0).collect();
+        let out = resample(&ramp, 44_100, 48_000);
+        assert_eq!(out.len(), 480);
+        assert!((out[240] - 0.5).abs() < 0.01, "{}", out[240]);
+        assert_eq!(resample(&ramp, 48_000, 48_000), ramp);
+        assert_eq!(resample(&ramp, 44_100, 24_000).len(), 240);
+    }
+
+    #[test]
+    fn decoding_a_recording() {
+        let path = std::env::temp_dir().join(format!("openvkcl-load-{}.wav", std::process::id()));
+        let spec = hound::WavSpec { channels: 2, sample_rate: 24_000, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        for _ in 0..2400 {
+            w.write_sample(i16::MAX / 2).unwrap();
+            w.write_sample(i16::MAX / 2).unwrap();
+        }
+        w.finalize().unwrap();
+        // 0.1 s of stereo at 24 kHz becomes 0.1 s of mono at 48 kHz.
+        let mono = load_mono(&path, 48_000).unwrap();
+        assert_eq!(mono.len(), 4800);
+        assert!((mono[100] - 0.5).abs() < 0.01);
+        std::fs::remove_file(path).ok();
     }
 }

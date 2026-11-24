@@ -16,6 +16,7 @@
     config,
     phone,
     call,
+    freqHz = null,
     onchange,
   }: {
     config: KeyerConfig;
@@ -23,11 +24,39 @@
     phone: boolean;
     /** The call being typed: typing one stops CQ repeat, as in N1MM. */
     call: string;
+    /** The radio's frequency, when it's connected: tuning away from the run
+     * frequency switches to S&P, as in N1MM. */
+    freqHz?: number | null;
     /** Save a change to the keyer settings (a new recording, the repeat time). */
     onchange: (config: KeyerConfig) => void;
   } = $props();
 
   let set = $state<KeySet>("run");
+  /** Where Run was chosen (F1, the Run button or Alt+U): the CQ frequency. */
+  let runHz: number | null = null;
+  /** Tuning more than this far from the CQ frequency means searching and pouncing. */
+  const RUN_TOLERANCE_HZ = 200;
+
+  function goRun() {
+    set = "run";
+    runHz = untrack(() => freqHz);
+  }
+
+  // As in N1MM: tuning away from the CQ frequency switches to S&P (stopping
+  // CQ repeat), and tuning back to it switches back to Run.
+  $effect(() => {
+    const hz = freqHz;
+    if (hz == null || runHz == null) return;
+    const away = Math.abs(hz - runHz) > RUN_TOLERANCE_HZ;
+    untrack(() => {
+      if (away && set === "run") {
+        set = "sp";
+        if (repeat) stopRepeat();
+      } else if (!away && set === "sp") {
+        set = "run";
+      }
+    });
+  });
   let repeat = $state(false);
   let status = $state<KeyerStatus>({ playing: null, recording: null, finished: null, error: null });
   let note = $state("");
@@ -131,7 +160,7 @@
       else if (e.shiftKey) play(set === "run" ? "sp" : "run", key);
       else if (key === 0) {
         // F1 is CQ: it always switches to Run, as in N1MM.
-        set = "run";
+        goRun();
         play("run", 0);
       } else play(set, key);
       return;
@@ -152,7 +181,8 @@
       repeatInput?.select();
     } else if (e.altKey && e.code === "KeyU") {
       e.preventDefault();
-      set = set === "run" ? "sp" : "run";
+      if (set === "run") set = "sp";
+      else goRun();
     }
   }
 
@@ -165,7 +195,7 @@
 
 <div class="bar" class:off={!phone}>
   <div class="sets" role="radiogroup" aria-label="Operating mode" title="Run or Search & Pounce messages (Alt+U)">
-    <button class="set" class:on={set === "run"} role="radio" aria-checked={set === "run"} onclick={() => (set = "run")} tabindex="-1"
+    <button class="set" class:on={set === "run"} role="radio" aria-checked={set === "run"} onclick={goRun} tabindex="-1"
       >Run</button
     >
     <button class="set sp" class:on={set === "sp"} role="radio" aria-checked={set === "sp"} onclick={() => (set = "sp")} tabindex="-1"
@@ -180,7 +210,7 @@
         class:playing={!!status.playing && !!file && status.playing.endsWith(file)}
         class:recording={!!status.recording && status.recording.endsWith(recordingName(set, i))}
         class:empty={!file}
-        onclick={() => (i === 0 ? ((set = "run"), play("run", 0)) : play(set, i))}
+        onclick={() => (i === 0 ? (goRun(), play("run", 0)) : play(set, i))}
         title="{file ? `Play ${file}` : 'Not recorded: Ctrl+Shift+F' + (i + 1) + ' records it'}"
         tabindex="-1"
       >

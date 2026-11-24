@@ -538,7 +538,13 @@
   {/if}
 
   {#if keyer && showKeyer}
-    <KeyerBar config={keyer} phone={modeClass(mode) === "PH"} call={callKey} onchange={onkeyerchange} />
+    <KeyerBar
+      config={keyer}
+      phone={modeClass(mode) === "PH"}
+      call={callKey}
+      freqHz={rig.connected ? rig.freq_hz : null}
+      onchange={onkeyerchange}
+    />
   {/if}
 </div>
 

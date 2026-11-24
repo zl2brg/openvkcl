@@ -60,6 +60,8 @@
   let notice = $state("");
   let noticeIsError = $state(false);
   let check = $state<CheckResult | null>(null);
+  /** The call being typed on the entry line: the log shows only its contacts. */
+  let typedCall = $state("");
 
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
   let rigDialog = $state(false);
@@ -449,6 +451,7 @@
         <EntryLine
           bind:this={entry}
           bind:check
+          bind:typed={typedCall}
           contest={view.contest}
           setup={view.setup}
           {rig}
@@ -462,6 +465,7 @@
             rows={view.qsos}
             contest={view.contest}
             highlight={check?.previous[0]?.call ?? ""}
+            callFilter={typedCall}
             bind:range
             onedit={(r) => (editRow = r)}
             ondelete={(r) => deleteQso(r.id)}

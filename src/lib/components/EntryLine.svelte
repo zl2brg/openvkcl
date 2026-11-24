@@ -32,6 +32,7 @@
     qrzEnabled,
     onlog,
     check = $bindable(null),
+    typed = $bindable(""),
   }: {
     contest: ContestDef;
     setup: LogSetup;
@@ -43,6 +44,8 @@
     qrzEnabled: boolean;
     onlog: (input: QsoInput) => Promise<void>;
     check?: CheckResult | null;
+    /** The call being typed, in capitals, for the log to filter on. */
+    typed?: string;
   } = $props();
 
   let call = $state("");
@@ -133,6 +136,9 @@
   let qrzError = $state("");
 
   let callKey = $derived(call.trim().toUpperCase());
+  $effect(() => {
+    typed = callKey;
+  });
   /** The name the log or QRZ.com already has for this station, used when left blank. */
   let knownName = $derived(check?.known_name ?? qrz?.name ?? "");
   let plausible = $derived(/^[A-Z0-9/]{3,}$/.test(callKey) && /\d/.test(callKey) && /[A-Z]/.test(callKey));

@@ -490,10 +490,18 @@
     {/if}
   </div>
 
-  <!-- The suggestions and QRZ rows keep their space when empty, so the panel
-       doesn't change height as a call is typed and the log below stays put. -->
-  <div class="scp mono" aria-label="Super Check Partial">
-    {#if callKey && scp && (scp.partial.length || scp.near.length)}
+  <!-- Empty rows hold the suggestions' and QRZ line's places when they're not
+       shown, so the panel doesn't change height as a call is typed and the log
+       below stays put. -->
+  {#if !(callKey && scp && (scp.partial.length || scp.near.length))}
+    <div class="scp"></div>
+  {/if}
+  {#if !plausible}
+    <div class="qrz"></div>
+  {/if}
+
+  {#if callKey && scp && (scp.partial.length || scp.near.length)}
+    <div class="scp mono" aria-label="Super Check Partial">
       {#each scp.partial as c (c)}
         <button tabindex="-1" class:worked={worked.has(c)} onclick={() => pick(c)} title={worked.has(c) ? "In log" : ""}>{c}</button>
       {/each}
@@ -503,11 +511,11 @@
           <button tabindex="-1" class="near" class:worked={worked.has(c)} onclick={() => pick(c)}>{c}</button>
         {/each}
       {/if}
-    {/if}
-  </div>
+    </div>
+  {/if}
 
-  <div class="qrz">
-    {#if plausible}
+  {#if plausible}
+    <div class="qrz">
       {#if scp?.exact}<span class="ok" title="In MASTER.SCP or your log">✓ known call</span>{/if}
       {#if qrz}
         {@const place = [qrz.city, qrz.state, qrz.country].filter(Boolean).join(", ")}
@@ -526,8 +534,8 @@
         <span class="muted">QRZ: {qrzError}</span>
       {/if}
       <a class="link" href="https://www.qrz.com/db/{callKey}" onclick={openQrz} tabindex="-1">QRZ.com ↗</a>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </div>
 
 <style>

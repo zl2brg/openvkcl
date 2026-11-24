@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
   import {
+    reportProblem,
     dateTimeText,
     isFutureQsoTime,
     parseDateTimeText,
@@ -83,6 +84,17 @@
     if (!t) {
       error = `Time must be YYYY-MM-DD HH:MM (${zoneLabel()}).`;
       return;
+    }
+    // Only reports being changed are checked: imported ones may be anything.
+    for (const [label, now, was] of [
+      ["RST sent", qso.sent_rst, r.sent_rst],
+      ["RST rcvd", qso.rcvd_rst, r.rcvd_rst],
+    ] as const) {
+      const problem = now !== was ? reportProblem(qso.mode, now) : null;
+      if (problem) {
+        error = `${label} ${problem}.`;
+        return;
+      }
     }
     qso.time = t;
     onsave($state.snapshot(qso) as Qso);

@@ -75,9 +75,102 @@ pub fn default_rst(mode: &str) -> &'static str {
     }
 }
 
+/// The kind of signal report a mode uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Report {
+    /// Readability 1-5 and strength 1-9, e.g. 59.
+    Rs,
+    /// Readability, strength and tone 1-9, e.g. 599.
+    Rst,
+    /// A signal-to-noise figure in dB from WSJT-X and similar, e.g. -10 or +05.
+    Db,
+    /// A contest's DG mode covers both kinds of digital mode.
+    RstOrDb,
+}
+
+pub fn report(mode: &str) -> Report {
+    match mode {
+        "DG" => Report::RstOrDb,
+        "RY" | "RTTY" | "PSK31" | "OLIVIA" | "SSTV" => Report::Rst,
+        _ => match class(mode) {
+            "PH" => Report::Rs,
+            "CW" => Report::Rst,
+            _ => Report::Db,
+        },
+    }
+}
+
+fn is_rs(r: &str) -> bool {
+    let b = r.as_bytes();
+    b.len() == 2 && (b'1'..=b'5').contains(&b[0]) && (b'1'..=b'9').contains(&b[1])
+}
+
+fn is_rst(r: &str) -> bool {
+    r.len() == 3 && is_rs(&r[..2]) && (b'1'..=b'9').contains(&r.as_bytes()[2])
+}
+
+fn is_db(r: &str) -> bool {
+    let b = r.as_bytes();
+    (2..=3).contains(&b.len()) && (b[0] == b'+' || b[0] == b'-') && b[1..].iter().all(u8::is_ascii_digit)
+}
+
+/// Why `rst` isn't a valid report in `mode`, or None if it is. Empty is fine:
+/// the mode's default is used.
+pub fn check_report(mode: &str, rst: &str) -> Option<&'static str> {
+    let rst = rst.trim();
+    if rst.is_empty() {
+        return None;
+    }
+    let ok = match report(mode) {
+        Report::Rs => is_rs(rst),
+        Report::Rst => is_rst(rst),
+        Report::Db => is_db(rst),
+        Report::RstOrDb => is_rst(rst) || is_db(rst),
+    };
+    (!ok).then_some(match report(mode) {
+        Report::Rs => "must be like 59: readability 1-5, then strength 1-9",
+        Report::Rst => "must be like 599: readability 1-5, then strength and tone 1-9",
+        Report::Db => "must be a signal report in dB like -10 or +05",
+        Report::RstOrDb => "must be like 599, or a report in dB like -10",
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reports() {
+        // Phone: RS.
+        for ok in ["59", "57", "11", "33"] {
+            assert_eq!(check_report("SSB", ok), None, "{ok}");
+            assert_eq!(check_report("PH", ok), None, "{ok}");
+        }
+        for bad in ["599", "69", "50", "5", "5x", "abc", "-10"] {
+            assert!(check_report("SSB", bad).is_some(), "{bad}");
+        }
+        // CW and RTTY: RST.
+        for ok in ["599", "579", "111"] {
+            assert_eq!(check_report("CW", ok), None, "{ok}");
+            assert_eq!(check_report("RY", ok), None, "{ok}");
+        }
+        for bad in ["59", "5990", "609", "590", "5nn"] {
+            assert!(check_report("CW", bad).is_some(), "{bad}");
+        }
+        // FT8 and friends: dB.
+        for ok in ["-10", "+05", "-7", "+0", "-24"] {
+            assert_eq!(check_report("FT8", ok), None, "{ok}");
+        }
+        for bad in ["10", "599", "-", "-100", "--5", "+a"] {
+            assert!(check_report("FT4", bad).is_some(), "{bad}");
+        }
+        // A contest's DG takes either.
+        assert_eq!(check_report("DG", "599"), None);
+        assert_eq!(check_report("DG", "-12"), None);
+        assert!(check_report("DG", "59").is_some());
+        // Blank uses the default.
+        assert_eq!(check_report("SSB", "  "), None);
+    }
 
     #[test]
     fn adif_round_trip() {

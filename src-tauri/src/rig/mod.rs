@@ -166,7 +166,7 @@ impl Client {
             Client::Rigctld(c) => c.set_ptt(on).await,
             Client::Flrig(c) => c.set_ptt(on).await,
             Client::Tci(c) => c.send(if on { "trx:0,true;" } else { "trx:0,false;" }).await,
-            Client::Flex(c) => c.send(if on { "xmit 1" } else { "xmit 0" }).await,
+            Client::Flex(c) => c.set_ptt(on).await,
         }
     }
 

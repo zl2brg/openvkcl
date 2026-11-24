@@ -3,6 +3,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { open } from "@tauri-apps/plugin-dialog";
   import Modal from "./Modal.svelte";
+  import LevelMeter from "./LevelMeter.svelte";
   import {
     api,
     errorText,
@@ -185,6 +186,7 @@
       Recordings are saved in {info?.voice_dir ?? "the voice folder"}. F1 is the CQ key: it switches to Run, and
       CQ repeat sends it again after the pause. Shift+F-key plays the other set's key.
     </p>
+    {#if status.recording}<p class="recording">● Recording <LevelMeter /></p>{/if}
     {#if message}<p class="error">{message}</p>{/if}
   </div>
 
@@ -273,6 +275,11 @@
   .key button {
     font-size: 0.8rem;
     padding: 3px 8px;
+  }
+  .recording {
+    margin: 0;
+    color: var(--bad);
+    font-weight: 600;
   }
   .rec.on,
   button.on {

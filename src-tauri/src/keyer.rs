@@ -11,6 +11,14 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter};
 
 pub const STATUS_EVENT: &str = "keyer-status";
+/// The microphone's level while recording, 0 to 1, about ten times a second.
+pub const LEVEL_EVENT: &str = "keyer-level";
+
+/// A recording quieter than this all through (about -50 dBFS) is taken to be
+/// silence: on a Mac, what the app gets without microphone access.
+const SILENT: f32 = 0.003;
+/// How often the level is reported while recording.
+const LEVEL_EVERY: Duration = Duration::from_millis(100);
 
 /// Keys in each message set, F1 to F12.
 pub const KEYS: usize = 12;
@@ -143,8 +151,10 @@ fn play_blocking(path: &Path, output: &str, stop: &AtomicBool) -> Result<(), Str
     Ok(())
 }
 
-/// Record from the named input (or the default) into a mono 16-bit .wav at `path`.
-fn record_blocking(path: &Path, input: &str, stop: &AtomicBool) -> Result<(), String> {
+/// Record from the named input (or the default) into a mono 16-bit .wav at
+/// `path`, reporting the level to `level` as it goes. A silent recording is
+/// deleted and reported as an error.
+fn record_blocking(path: &Path, input: &str, stop: &AtomicBool, level: impl Fn(f32)) -> Result<(), String> {
     use rodio::microphone::{MicrophoneBuilder, available_inputs};
     let builder = MicrophoneBuilder::new();
     let builder = match available_inputs()
@@ -175,6 +185,7 @@ fn record_blocking(path: &Path, input: &str, stop: &AtomicBool) -> Result<(), St
     let mut wav = hound::WavWriter::create(path, spec).map_err(|e| format!("{}: {e}", path.display()))?;
     let started = Instant::now();
     let mut frame = Vec::with_capacity(channels);
+    let (mut peak, mut window_peak, mut reported) = (0f32, 0f32, Instant::now());
     while !stop.load(Ordering::Relaxed) && started.elapsed() < MAX_RECORDING {
         let Some(sample) = mic.next() else { break };
         frame.push(sample);
@@ -184,9 +195,29 @@ fn record_blocking(path: &Path, input: &str, stop: &AtomicBool) -> Result<(), St
             wav.write_sample((mono.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
                 .map_err(|e| e.to_string())?;
             frame.clear();
+            window_peak = window_peak.max(mono.abs());
+            if reported.elapsed() >= LEVEL_EVERY {
+                level(window_peak.min(1.0));
+                peak = peak.max(window_peak);
+                window_peak = 0.0;
+                reported = Instant::now();
+            }
         }
     }
-    wav.finalize().map_err(|e| e.to_string())
+    level(0.0);
+    wav.finalize().map_err(|e| e.to_string())?;
+    if peak.max(window_peak) < SILENT {
+        let _ = std::fs::remove_file(path);
+        return Err(if cfg!(target_os = "macos") {
+            "The recording was silent. Allow OpenVKCL to use the microphone in System Settings → \
+             Privacy & Security → Microphone, or choose another microphone under Voice keyer…, then record again"
+                .into()
+        } else {
+            "The recording was silent: check the microphone chosen under Voice keyer… and its level, then record again"
+                .into()
+        });
+    }
+    Ok(())
 }
 
 #[derive(Default)]
@@ -272,7 +303,11 @@ impl Keyer {
         let name = path.display().to_string();
         publish(&app, &shared, KeyerStatus { recording: Some(name), ..Default::default() });
         tauri::async_runtime::spawn(async move {
-            let result = tauri::async_runtime::spawn_blocking(move || record_blocking(&path, &cfg.input, &stop))
+            let meter = app.clone();
+            let level = move |l: f32| {
+                let _ = meter.emit(LEVEL_EVENT, l);
+            };
+            let result = tauri::async_runtime::spawn_blocking(move || record_blocking(&path, &cfg.input, &stop, level))
                 .await
                 .unwrap_or_else(|e| Err(e.to_string()));
             publish(&app, &shared, KeyerStatus { error: result.err(), ..Default::default() });

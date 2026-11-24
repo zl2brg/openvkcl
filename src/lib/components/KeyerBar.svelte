@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
   import { listen } from "@tauri-apps/api/event";
+  import LevelMeter from "./LevelMeter.svelte";
   import {
     api,
     errorText,
@@ -211,6 +212,7 @@
 <div class="state">
   {#if status.recording}
     <span class="rec">● Recording {set === "run" ? "Run" : "S&P"} key: press Ctrl+Shift+F-key or Esc to stop</span>
+    <LevelMeter />
   {:else if status.playing}
     <span class="tx">TX</span> <span>playing {status.playing.split(/[\\/]/).pop()} · Esc stops</span>
   {:else if repeat}

@@ -357,6 +357,7 @@ export function recordingName(set: KeySet, key: number): string {
 }
 
 export const KEYER_STATUS_EVENT = "keyer-status";
+export const KEYER_LEVEL_EVENT = "keyer-level";
 
 export interface QrzConfig {
   enabled: boolean;

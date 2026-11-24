@@ -393,6 +393,16 @@ fn next_sent_nr(log: &OpenLog, band: &str) -> String {
     }
 }
 
+/// A `number` field as stored: listed codes (e.g. shires) in capitals, anything else
+/// just trimmed, since general logs keep free text there.
+fn exch_code(def: &ContestDef, s: &str) -> String {
+    if def.number_list.is_some() {
+        contest::def::norm_code(s)
+    } else {
+        s.trim().to_string()
+    }
+}
+
 fn draft_qso(log: &OpenLog, input: &QsoInput) -> Qso {
     let rst = |s: &str| {
         if s.trim().is_empty() {
@@ -421,13 +431,13 @@ fn draft_qso(log: &OpenLog, input: &QsoInput) -> Qso {
         rcvd_locator: geo::normalize_locator(&input.rcvd_locator),
         operator: String::new(),
         sent_exch: if log.def.has_field(ExchField::Number) {
-            log.setup.sent_number.trim().to_string()
+            exch_code(&log.def, &log.setup.sent_number)
         } else if log.def.has_field(ExchField::Text) {
             input.sent_exch.trim().to_string()
         } else {
             String::new()
         },
-        rcvd_exch: input.rcvd_exch.trim().to_string(),
+        rcvd_exch: exch_code(&log.def, &input.rcvd_exch),
         details: crate::model::QsoDetails {
             name: input.name.trim().to_string(),
             qth: input.qth.trim().to_string(),
@@ -656,6 +666,8 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Changed> {
         qso.call = callsign::normalize(&qso.call);
         qso.rcvd_locator = geo::normalize_locator(&qso.rcvd_locator);
         qso.sent_locator = geo::normalize_locator(&qso.sent_locator);
+        qso.rcvd_exch = exch_code(&log.def, &qso.rcvd_exch);
+        qso.sent_exch = exch_code(&log.def, &qso.sent_exch);
         let stored = log.qsos.iter().find(|q| q.id == qso.id).ok_or("QSO not found")?;
         // Only reports being changed are checked: imported ones may be anything.
         for (which, new, old) in [

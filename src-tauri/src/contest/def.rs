@@ -32,6 +32,17 @@ pub struct ContestDef {
     /// Prefixes of stations that send the `number` field. Empty means everyone.
     #[serde(default)]
     pub number_from: Vec<String>,
+    /// An official list of codes for the `number` field, e.g. VK Shires codes like
+    /// "BU4". With a list, the field takes letters as well as digits.
+    #[serde(default)]
+    pub number_list: Option<NumberList>,
+    /// The listed codes and what they stand for, read from `number_list` when the
+    /// contests load. Empty when there is no list or it couldn't be read.
+    #[serde(default, skip_deserializing)]
+    pub number_names: BTreeMap<String, String>,
+    /// Why `number_list` couldn't be read.
+    #[serde(default, skip_deserializing)]
+    pub number_list_error: Option<String>,
     /// New logs default to a separate serial number series on each band.
     /// When true the setup dialog has no checkbox: every log uses one series per band.
     #[serde(default)]
@@ -62,6 +73,34 @@ pub struct ContestDef {
 
 fn default_number_label() -> String {
     "Nr".into()
+}
+
+/// A file of valid `number` codes in the user's contests folder, so it can be
+/// replaced whenever the organisers publish a new one. Read in the layout of the
+/// WIA's `Shire.db3` for VKCL: an SQLite table `shireTbl` with
+/// `shire_shireCode`, `shire_shireName` and `shire_stateName`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NumberList {
+    /// File name within the contests folder, e.g. "Shire.db3".
+    pub file: String,
+    /// What one code is called, for messages, e.g. "shire".
+    #[serde(default = "default_list_item")]
+    pub item: String,
+    /// CQ zones 1 to 40 are valid too (sent by stations outside the listed area).
+    #[serde(default)]
+    pub cq_zones: bool,
+    /// Where to download the current list.
+    #[serde(default)]
+    pub url: String,
+}
+
+fn default_list_item() -> String {
+    "code".into()
+}
+
+/// A received code as compared and logged: trimmed and in capitals.
+pub fn norm_code(s: &str) -> String {
+    s.trim().to_ascii_uppercase()
 }
 
 /// Which category choices should tick "separate serial numbers on each band".
@@ -357,6 +396,26 @@ impl ContestDef {
         self
     }
 
+    /// What a `number` code stands for: a listed code's name, or "CQ zone N".
+    pub fn number_meaning(&self, code: &str) -> Option<String> {
+        let list = self.number_list.as_ref()?;
+        let code = norm_code(code);
+        if let Some(name) = self.number_names.get(&code) {
+            return Some(name.clone());
+        }
+        let zone = code.parse::<u32>().ok().filter(|z| (1..=40).contains(z));
+        zone.filter(|_| list.cq_zones).map(|z| format!("CQ zone {z}"))
+    }
+
+    /// Whether a `number` code is on the list (or a CQ zone, if those count).
+    /// `None` when there is no list, or it couldn't be read, so nothing can be said.
+    pub fn number_valid(&self, code: &str) -> Option<bool> {
+        if self.number_list.is_none() || self.number_names.is_empty() {
+            return None;
+        }
+        Some(self.number_meaning(code).is_some())
+    }
+
     pub fn block_of(&self, start: DateTime<Utc>, t: DateTime<Utc>) -> i64 {
         match &self.blocks {
             Some(b) if b.minutes > 0 => (t - start).num_minutes().div_euclid(b.minutes).max(0),
@@ -402,6 +461,9 @@ impl ContestDef {
             && !self.has_field(ExchField::Number)
         {
             return Err(format!("{}: number multipliers need a number in the exchange", self.id));
+        }
+        if self.number_list.is_some() && !self.has_field(ExchField::Number) {
+            return Err(format!("{}: number_list needs a number in the exchange", self.id));
         }
         for s in &self.sessions {
             if s.start_minute < 0 || s.minutes <= 0 || s.start_minute + s.minutes > self.duration_minutes {

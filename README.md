@@ -18,6 +18,10 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   VHF-UHF Field Day, multi-two and multi-multi in John Moyle, and multi-multi
   in Trans-Tasman. Single-operator entries keep one series, as do multi-single
   entries in John Moyle and Trans-Tasman.
+- WIA VK Shires: shire codes checked against the WIA's own shire list, which
+  you can replace whenever the WIA publishes a new one (see
+  [VK Shires](#vk-shires)), CQ zones from stations outside VK, and shires and
+  zones counted as multipliers on each band and mode.
 - NZART HF contests: Jock White Memorial Field Day, Memorial Contest and
   Sangster Shield, with their one-hour (or half-hour) periods, separate serial
   numbers per band, and branch-number multipliers.
@@ -129,6 +133,28 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
 
 In contests that exchange an NZART branch number, the branch box fills in from
 your last contact with that station, so you only type it once.
+
+### VK Shires
+
+VK stations send RS(T) and their shire code (e.g. `59 BU4`); stations outside
+VK send RS(T) and their CQ zone (e.g. `59 32`). The codes come from the WIA's
+official list, which changes from time to time, so OpenVKCL reads the WIA's own
+file rather than keeping a copy:
+
+1. Download **Shire.db3** from the
+   [VK Shires page](https://www.wia.org.au/members/contests/wavks/) (the same
+   file VKCL uses).
+2. Put it in the app's `contests` folder (see
+   [Contest definitions](#contest-definitions)), replacing any older copy.
+3. Restart OpenVKCL to load the new list.
+
+With the list in place, the Shire/Zone box shows the shire's name (or "CQ zone
+32") as you type, and warns about a code that isn't on the list: the WIA
+deducts points for those, and they don't count as multipliers. The setup dialog
+checks your own shire code the same way. Without the file, any code is
+accepted and counted, and the entry line says the list is missing.
+
+Rovers that change shire during the contest aren't handled yet.
 
 ### Radio control
 

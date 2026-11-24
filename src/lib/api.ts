@@ -27,6 +27,12 @@ export interface ContestDef {
   exchange: ExchField[];
   number_label: string;
   number_from: string[];
+  /** An official list of codes for the number field (e.g. VK Shires), read from the contests folder. */
+  number_list: NumberList | null;
+  /** Listed codes and what they stand for, e.g. BU4 -> "Bundaberg, Qld". Empty if the list couldn't be read. */
+  number_names: Record<string, string>;
+  /** Why the list couldn't be read, e.g. the file isn't there yet. */
+  number_list_error: string | null;
   serial_per_band: boolean;
   /** When the setup dialog should tick separate serials per band. */
   serial_per_band_when: "never" | "multi_op" | "multi_tx";
@@ -53,6 +59,29 @@ export interface ContestDef {
     /** Only "fixed" points have `local_time`: a points factor between two local times (e.g. RD's 01:00-06:00 x3). */
     points: { kind: string; local_time?: { from: string; to: string; factor: number } | null };
   };
+}
+
+export interface NumberList {
+  file: string;
+  /** What one code is called, e.g. "shire". */
+  item: string;
+  /** CQ zones 1-40 are valid too. */
+  cq_zones: boolean;
+  url: string;
+}
+
+/**
+ * What a number-field code stands for in a contest with a code list: the listed name, "CQ zone N", or "" when it
+ * isn't valid. `null` when there's nothing to check against (no list, or it couldn't be read).
+ */
+export function numberMeaning(contest: ContestDef, code: string): string | null {
+  const list = contest.number_list;
+  if (!list) return null;
+  const c = code.trim().toUpperCase();
+  const listed = contest.number_names[c];
+  if (listed) return listed;
+  if (list.cq_zones && /^\d+$/.test(c) && +c >= 1 && +c <= 40) return `CQ zone ${+c}`;
+  return Object.keys(contest.number_names).length ? "" : null;
 }
 
 export interface Bonus {

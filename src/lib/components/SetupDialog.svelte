@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
-  import { isLocator, pad, type Bonus, type ContestDef, type LogSetup } from "$lib/api";
+  import { isLocator, numberMeaning, pad, type Bonus, type ContestDef, type LogSetup } from "$lib/api";
 
   let {
     contests,
@@ -33,6 +33,10 @@
     [...contests].sort((a, b) => Number(b.general) - Number(a.general) || Number(b.generic) - Number(a.generic)),
   );
   let bandBonuses = $derived(contest?.scoring.bonus.filter((b) => b.per_band) ?? []);
+  /** What the code you send stands for, in contests with a code list (e.g. your VK shire). */
+  let sentMeaning = $derived(
+    contest && setup.sent_number.trim() ? numberMeaning(contest, setup.sent_number) : null,
+  );
 
   /** Bands ticked for a per-band bonus. Without a list (older logs) the category claims every band. */
   function bonusBands(b: Bonus): string[] {
@@ -135,7 +139,8 @@
       error = "Enter your callsign.";
       return;
     }
-    if (contest?.exchange.includes("number") && !/^\d+$/.test(setup.sent_number.trim())) {
+    const codeOk = contest?.number_list ? /^[A-Za-z0-9]+$/ : /^\d+$/;
+    if (contest?.exchange.includes("number") && !codeOk.test(setup.sent_number.trim())) {
       error = `Enter your ${contest.number_label.toLowerCase()} to send.`;
       return;
     }
@@ -159,6 +164,11 @@
         error = "Enter a name for the exchange, such as Temp or Shire.";
         return;
       }
+    }
+    if (contest?.number_list && sentMeaning === "") {
+      const list = contest.number_list;
+      error = `${setup.sent_number.trim().toUpperCase()} is not a listed ${list.item}${list.cq_zones ? " or a CQ zone" : ""}.`;
+      return;
     }
     const loc = setup.station.locator.trim();
     if (!isLocator(loc) || loc.length < 6) {
@@ -194,7 +204,7 @@
     setup.start = start.toISOString();
     setup.station.callsign = setup.station.callsign.trim().toUpperCase();
     setup.station.operators = setup.station.operators.trim().toUpperCase();
-    setup.sent_number = setup.sent_number.trim();
+    setup.sent_number = contest?.number_list ? setup.sent_number.trim().toUpperCase() : setup.sent_number.trim();
     onsave($state.snapshot(setup) as LogSetup);
   }
 </script>
@@ -317,10 +327,34 @@
         </label>
       </div>
       {#if contest?.exchange.includes("number")}
+        {@const list = contest.number_list}
         <label>
           {contest.number_label} (sent)
-          <input class="mono" bind:value={setup.sent_number} inputmode="numeric" />
+          {#if list}
+            <input
+              class="mono"
+              bind:value={setup.sent_number}
+              oninput={() => (setup.sent_number = setup.sent_number.toUpperCase())}
+              spellcheck="false"
+            />
+          {:else}
+            <input class="mono" bind:value={setup.sent_number} inputmode="numeric" />
+          {/if}
         </label>
+        {#if list}
+          {#if contest.number_list_error}
+            <p class="hint warn">{contest.number_list_error}. Until then, codes can't be checked.</p>
+          {:else if sentMeaning}
+            <p class="hint words">{sentMeaning}</p>
+          {:else if sentMeaning === ""}
+            <p class="hint warn">Not a listed {list.item}{list.cq_zones ? " or a CQ zone" : ""}.</p>
+          {:else}
+            <p class="hint words">
+              VK stations send their {list.item} code{list.cq_zones ? "; stations outside VK send their CQ zone" : ""}.
+              Checked against {list.file} ({Object.keys(contest.number_names).length} {list.item}s).
+            </p>
+          {/if}
+        {/if}
       {/if}
       {#if generic && setup.generic.cipher === "serial"}
         <label class="check">
@@ -473,5 +507,13 @@
     font-size: 0.8rem;
     color: var(--muted);
     word-break: break-all;
+  }
+  /* Hints that are sentences, not URLs: wrap between words. */
+  .hint.words,
+  .hint.warn {
+    word-break: normal;
+  }
+  .hint.warn {
+    color: var(--warn);
   }
 </style>

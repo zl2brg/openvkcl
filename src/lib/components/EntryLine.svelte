@@ -12,6 +12,7 @@
     generalMode,
     isFutureQsoTime,
     modeClass,
+    numberMeaning,
     parseDateTimeText,
     zoneLabel,
     type CheckResult,
@@ -161,6 +162,14 @@
       if (previous[i].name || previous[i].qth) return previous[i];
     }
     return null;
+  });
+
+  /** The number field takes codes from an official list (e.g. VK Shires "BU4"), not just digits. */
+  let coded = $derived(!!contest.number_list);
+  /** What the received code stands for, e.g. "Bundaberg, Qld" or "CQ zone 32". */
+  let exchMeaning = $derived.by(() => {
+    const code = rcvdExch.trim() || check?.known_exch || "";
+    return hasExch && code ? numberMeaning(contest, code) : null;
   });
 
   let callKey = $derived(call.trim().toUpperCase());
@@ -500,9 +509,11 @@
           class="mono"
           bind:this={exchInput}
           bind:value={rcvdExch}
+          oninput={() => coded && (rcvdExch = rcvdExch.toUpperCase())}
           placeholder={check?.known_exch ?? ""}
-          inputmode="numeric"
+          inputmode={coded ? "text" : "numeric"}
           autocomplete="off"
+          spellcheck="false"
         />
       </label>
     {/if}
@@ -573,8 +584,13 @@
         <span>{r.points.toFixed(r.points % 1 ? 1 : 0)} pts</span>
         {#if r.distance_km != null}<span>{r.distance_km.toFixed(0)} km</span>{/if}
         {#if r.new_mult}<span class="mult">NEW MULT {r.mult}</span>{/if}
+        {#if exchMeaning}<span class="country">{exchMeaning}</span>{/if}
         {#if r.warning}<span class="warn">{r.warning}</span>{/if}
       {/if}
+    {:else if contest.number_list_error}
+      <span class="warn" title={contest.number_list_error}
+        >{contest.number_label} codes can't be checked: {contest.number_list_error}</span
+      >
     {:else}
       <span class="muted"
         >{general

@@ -167,11 +167,11 @@
     <button class="set" class:on={set === "run"} role="radio" aria-checked={set === "run"} onclick={() => (set = "run")} tabindex="-1"
       >Run</button
     >
-    <button class="set" class:on={set === "sp"} role="radio" aria-checked={set === "sp"} onclick={() => (set = "sp")} tabindex="-1"
+    <button class="set sp" class:on={set === "sp"} role="radio" aria-checked={set === "sp"} onclick={() => (set = "sp")} tabindex="-1"
       >S&amp;P</button
     >
   </div>
-  <div class="keys">
+  <div class="keys" class:sp={set === "sp"}>
     {#each messages as m, i (i)}
       {@const file = set === "run" ? config.run[i]?.file : config.sp[i]?.file}
       <button
@@ -257,40 +257,82 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  /* Coloured pills: Run blue, S&P green. Empty keys are a softer shade; a key that's playing glows. */
+  .keys {
+    --key: var(--accent);
+  }
+  .keys.sp {
+    --key: var(--ok);
+  }
+  .key {
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--key) 24%, var(--panel));
+    border: 1px solid color-mix(in srgb, var(--key) 60%, var(--border));
+    transition:
+      background 0.15s,
+      box-shadow 0.15s;
+  }
+  .key:hover {
+    background: color-mix(in srgb, var(--key) 36%, var(--panel));
+  }
+  .key .f {
+    color: var(--key);
+  }
+  .key .label {
+    font-weight: 600;
+  }
+  .key.empty {
+    background: color-mix(in srgb, var(--key) 9%, var(--panel));
+    border-color: color-mix(in srgb, var(--key) 30%, var(--border));
+  }
   .key.empty .label {
     color: var(--muted);
+    font-weight: 400;
   }
   .key.playing {
-    background: var(--bad);
+    --key: var(--bad);
+    background: color-mix(in srgb, var(--bad) 35%, var(--panel));
     border-color: var(--bad);
-    color: var(--bg);
-  }
-  .key.playing .f {
-    color: var(--bg);
+    animation: glow 1.2s ease-in-out infinite;
   }
   .key.recording {
+    --key: var(--bad);
     border-color: var(--bad);
-    box-shadow: inset 0 0 0 1px var(--bad);
+    animation: glow 0.8s ease-in-out infinite;
   }
-  .sets {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+  @keyframes glow {
+    0%,
+    100% {
+      box-shadow: 0 0 4px 1px color-mix(in srgb, var(--key) 55%, transparent);
+    }
+    50% {
+      box-shadow: 0 0 14px 4px color-mix(in srgb, var(--key) 85%, transparent);
+    }
   }
   .set {
     flex: 1;
     min-width: 3.4em;
     font-weight: 700;
+    border-radius: 10px;
+    --key: var(--accent);
+  }
+  .set.sp {
+    --key: var(--ok);
   }
   .set.on {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--bg);
+    background: color-mix(in srgb, var(--key) 30%, var(--panel));
+    border-color: var(--key);
+    color: var(--fg);
+    box-shadow: 0 0 10px 2px color-mix(in srgb, var(--key) 60%, transparent);
+  }
+  .repeat {
+    border-radius: 10px;
   }
   .repeat.on {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--bg);
+    background: color-mix(in srgb, var(--warn) 28%, var(--panel));
+    border-color: var(--warn);
+    --key: var(--warn);
+    animation: glow 1.6s ease-in-out infinite;
   }
   .every {
     display: flex;

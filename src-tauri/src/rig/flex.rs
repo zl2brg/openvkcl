@@ -32,9 +32,9 @@ pub struct Client {
     radio: Radio,
     /// The GUI client (SmartSDR, AetherSDR, Maestro) we're bound to, if any.
     bound: Option<String>,
-    /// The transmit audio setting to put back on unkeying, when keying up
-    /// switched it to DAX.
-    dax_restore: Option<bool>,
+    /// Whether keying up switched transmit audio to DAX, to switch it off
+    /// again on unkeying.
+    dax_on: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -64,8 +64,6 @@ struct Radio {
     interlock: String,
     interlock_reason: String,
     tx_allowed: Option<bool>,
-    /// Whether transmit audio comes from DAX (the computer) rather than the mic.
-    tx_dax: Option<bool>,
 }
 
 impl Radio {
@@ -157,14 +155,6 @@ impl Radio {
                 self.apply_interlock(&mut words);
                 return false;
             }
-            Some("transmit") => {
-                for (key, value) in words.filter_map(|w| w.split_once('=')) {
-                    if key == "dax" {
-                        self.tx_dax = Some(value == "1");
-                    }
-                }
-                return false;
-            }
             _ => return false,
         }
         let Some(index) = words.next().and_then(|i| i.parse::<u32>().ok()) else {
@@ -229,7 +219,7 @@ impl Client {
             connected_at: Instant::now(),
             radio: Radio::default(),
             bound: None,
-            dax_restore: None,
+            dax_on: false,
         };
         client.send("client program OpenVKCL").await?;
         client.send("keepalive enable").await?;
@@ -259,9 +249,9 @@ impl Client {
     pub async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
         if !on {
             let unkeyed = self.xmit(false).await;
-            // Put the transmit audio back as it was: the operator's mic.
-            if let Some(dax) = self.dax_restore.take() {
-                self.request(&format!("transmit set dax={}", u8::from(dax))).await?;
+            // As N1MM does: DAX off when the message ends, back to the mic.
+            if std::mem::take(&mut self.dax_on) {
+                self.request("transmit set dax=0").await?;
             }
             return unkeyed;
         }
@@ -269,18 +259,15 @@ impl Client {
             return Err("FlexRadio has no slice open: start AetherSDR or SmartSDR with a slice to transmit on".into());
         }
         self.bind().await?;
-        // The voice keyer's audio comes from the computer, through DAX, not the mic.
-        if self.radio.tx_dax != Some(true) {
-            self.request("transmit set dax=1")
-                .await
-                .map_err(|e| format!("FlexRadio wouldn't take transmit audio from DAX: {e}"))?;
-            self.dax_restore = Some(self.radio.tx_dax.unwrap_or(false));
-        }
+        // The voice keyer's audio comes from the computer through DAX, not the
+        // mic: DAX on for each message, as N1MM does.
+        self.request("transmit set dax=1")
+            .await
+            .map_err(|e| format!("FlexRadio wouldn't take transmit audio from DAX: {e}"))?;
+        self.dax_on = true;
         let keyed = self.xmit(true).await;
-        if keyed.is_err()
-            && let Some(dax) = self.dax_restore.take()
-        {
-            let _ = self.request(&format!("transmit set dax={}", u8::from(dax))).await;
+        if keyed.is_err() && std::mem::take(&mut self.dax_on) {
+            let _ = self.request("transmit set dax=0").await;
         }
         keyed
     }

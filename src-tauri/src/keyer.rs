@@ -368,9 +368,18 @@ impl Keyer {
             let level = move |l: f32| {
                 let _ = meter.emit(LEVEL_EVENT, l);
             };
-            let result = tauri::async_runtime::spawn_blocking(move || record_blocking(&path, &cfg.input, &stop, level))
+            // Record beside the message and only replace it once the new one has
+            // sound, so a recording started by mistake or a silent mic doesn't
+            // lose the message already there.
+            let partial = path.with_extension("recording.wav");
+            let into = partial.clone();
+            let result = tauri::async_runtime::spawn_blocking(move || record_blocking(&into, &cfg.input, &stop, level))
                 .await
-                .unwrap_or_else(|e| Err(e.to_string()));
+                .unwrap_or_else(|e| Err(e.to_string()))
+                .and_then(|()| std::fs::rename(&partial, &path).map_err(|e| format!("{}: {e}", path.display())));
+            if result.is_err() {
+                let _ = std::fs::remove_file(&partial);
+            }
             publish(&app, &shared, KeyerStatus { error: result.err(), ..Default::default() });
         });
     }

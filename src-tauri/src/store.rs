@@ -402,6 +402,7 @@ mod tests {
             categories: Default::default(),
             bonus_bands: Default::default(),
             soapbox: String::new(),
+            generic: Default::default(),
         };
         let store = Store::create(&path, &setup).unwrap();
         let mut q = Qso {

@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- The voice keyer is off until you tick **Voice keyer** in the toolbar. The
+  F-key controls and **Voice keyer…** appear only while it is ticked.
+- In a contest, Space and Tab stop on RST sent before RST received.
+- Phone, CW and RTTY reports can be 59 or 599.
+- A generic contest: name, length, bands and one exchange (none, serial, locator
+  or text). RST is optional. No dupes and no score; the contact count is kept.
 - Faster with long general logs. Editing or deleting a contact sends only the
   rows that changed rather than the whole log (about 6 MB for a 20,000-contact
   logbook), and the log table redraws only those rows. Contacts imported

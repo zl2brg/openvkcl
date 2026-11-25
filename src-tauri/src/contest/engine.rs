@@ -114,7 +114,7 @@ fn exchange_warning(def: &ContestDef, setup: &LogSetup, q: &Qso) -> Option<Strin
     {
         problems.push(format!("received {} missing", def.number_label.to_lowercase()));
     }
-    if def.has_field(ExchField::Locator) {
+    if def.has_field(ExchField::Locator) && !def.generic {
         if q.rcvd_locator.len() < 6 || !geo::is_valid(&q.rcvd_locator) {
             problems.push("received locator must be at least 6 characters".to_string());
         }
@@ -266,6 +266,7 @@ fn basic_points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64
                 .unwrap_or(1.0);
             (basic * mode_factor, Some(d))
         }
+        Points::None => (0.0, None),
     }
 }
 
@@ -374,40 +375,43 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
         }
         r.warning = exchange_warning(def, setup, q);
 
-        let key = dupe_key(def, q, block);
-        match def.rework.kind {
-            ReworkKind::Never => r.dupe = last_worked.contains_key(&key),
-            ReworkKind::Block => {
-                r.dupe = last_worked.contains_key(&key);
-                if r.dupe {
-                    r.next_ok = def.block_start(setup.start, block + 1);
-                }
-            }
-            ReworkKind::Interval => {
-                if let Some(t) = last_worked.get(&key) {
-                    let next = *t + Duration::minutes(def.rework.minutes);
-                    if q.time < next {
-                        r.dupe = true;
-                        r.next_ok = Some(next);
+        if def.rework.kind != ReworkKind::Off {
+            let key = dupe_key(def, q, block);
+            match def.rework.kind {
+                ReworkKind::Never => r.dupe = last_worked.contains_key(&key),
+                ReworkKind::Block => {
+                    r.dupe = last_worked.contains_key(&key);
+                    if r.dupe {
+                        r.next_ok = def.block_start(setup.start, block + 1);
                     }
                 }
+                ReworkKind::Interval => {
+                    if let Some(t) = last_worked.get(&key) {
+                        let next = *t + Duration::minutes(def.rework.minutes);
+                        if q.time < next {
+                            r.dupe = true;
+                            r.next_ok = Some(next);
+                        }
+                    }
+                }
+                ReworkKind::Off => {}
             }
+            if r.dupe {
+                dupes += 1;
+                results[i] = r;
+                continue;
+            }
+            last_worked.insert(key.clone(), q.time);
+            // Only the latest contact with this station shows when it can be worked again.
+            if let Some(prev) = last_index.insert(key, i) {
+                results[prev].rework_at = None;
+            }
+            r.rework_at = match def.rework.kind {
+                ReworkKind::Never | ReworkKind::Off => None,
+                ReworkKind::Block => def.block_start(setup.start, block + 1),
+                ReworkKind::Interval => Some(q.time + Duration::minutes(def.rework.minutes)),
+            };
         }
-        if r.dupe {
-            dupes += 1;
-            results[i] = r;
-            continue;
-        }
-        last_worked.insert(key.clone(), q.time);
-        // Only the latest contact with this station shows when it can be worked again.
-        if let Some(prev) = last_index.insert(key, i) {
-            results[prev].rework_at = None;
-        }
-        r.rework_at = match def.rework.kind {
-            ReworkKind::Never => None,
-            ReworkKind::Block => def.block_start(setup.start, block + 1),
-            ReworkKind::Interval => Some(q.time + Duration::minutes(def.rework.minutes)),
-        };
         *by_band.entry(q.band.clone()).or_default() += 1;
 
         let tally = &mut tallies[group_of(def, &q.band)];

@@ -27,8 +27,11 @@
 
   let contest = $derived(contests.find((c) => c.id === setup.contest_id));
   let general = $derived(!!contest?.general);
-  // General logging first, then the contests.
-  let choices = $derived([...contests].sort((a, b) => Number(b.general) - Number(a.general)));
+  let generic = $derived(!!contest?.generic);
+  // General logging first, then a generic contest, then the named contests.
+  let choices = $derived(
+    [...contests].sort((a, b) => Number(b.general) - Number(a.general) || Number(b.generic) - Number(a.generic)),
+  );
   let bandBonuses = $derived(contest?.scoring.bonus.filter((b) => b.per_band) ?? []);
 
   /** Bands ticked for a per-band bonus. Without a list (older logs) the category claims every band. */
@@ -91,6 +94,16 @@
     setup.serial_per_band = c.serial_per_band;
     setup.categories = Object.fromEntries(c.categories.map((f) => [f.key, f.default]));
     setup.bonus_bands = {};
+    if (c.generic) {
+      setup.generic = {
+        name: "",
+        duration_minutes: c.duration_minutes,
+        bands: [...c.bands],
+        cipher: "",
+        cipher_label: "",
+        include_rst: true,
+      };
+    }
     defaultOffset();
   }
 
@@ -125,6 +138,27 @@
     if (contest?.exchange.includes("number") && !/^\d+$/.test(setup.sent_number.trim())) {
       error = `Enter your ${contest.number_label.toLowerCase()} to send.`;
       return;
+    }
+    if (generic) {
+      setup.generic.name = setup.generic.name.trim();
+      setup.generic.cipher_label = setup.generic.cipher_label.trim();
+      if (!setup.generic.name) {
+        error = "Enter a name for the contest.";
+        return;
+      }
+      if (setup.generic.duration_minutes <= 0) {
+        error = "Enter how long the contest runs.";
+        return;
+      }
+      setup.generic.bands = (contest?.bands ?? []).filter((b) => setup.generic.bands.includes(b));
+      if (!setup.generic.bands.length) {
+        error = "Choose at least one band.";
+        return;
+      }
+      if (setup.generic.cipher === "text" && !setup.generic.cipher_label) {
+        error = "Enter a name for the exchange, such as Temp or Shire.";
+        return;
+      }
     }
     const loc = setup.station.locator.trim();
     if (!isLocator(loc) || loc.length < 6) {
@@ -182,6 +216,11 @@
           For everyday operating and chasing DX: no contest period, scoring or dupes. Shows each station's country and
           whether it's a new one for you. Import your existing log with Import ADIF once it's created.
         </p>
+      {:else if generic}
+        <p class="hint">
+          For a contest that is not in the list. Choose the exchange. Nothing is marked a dupe and nothing is scored;
+          Cabrillo carries the contacts to the contest manager, with the contact count as the claimed score.
+        </p>
       {:else if contest?.rules_url}
         <p class="hint">Rules: {contest.rules_url}</p>
       {/if}
@@ -196,6 +235,61 @@
             <input type="time" bind:value={startTime} onchange={defaultOffset} />
           </label>
         </div>
+        {#if generic}
+          <label class="plain">
+            Contest name
+            <input bind:value={setup.generic.name} placeholder="e.g. QRP Hours" />
+          </label>
+          <label>
+            Length (hours)
+            <input
+              type="number"
+              min="0.5"
+              step="0.5"
+              value={setup.generic.duration_minutes / 60}
+              onchange={(e) => (setup.generic.duration_minutes = Math.round(Number(e.currentTarget.value) * 60))}
+            />
+          </label>
+          <div class="bands">
+            Bands
+            <div class="ticks">
+              {#each contest?.bands ?? [] as b (b)}
+                <label class="check">
+                  <input
+                    type="checkbox"
+                    checked={setup.generic.bands.includes(b)}
+                    onchange={(e) => {
+                      const on = e.currentTarget.checked;
+                      setup.generic.bands = on
+                        ? [...setup.generic.bands, b]
+                        : setup.generic.bands.filter((x) => x !== b);
+                    }}
+                  />
+                  {b}
+                </label>
+              {/each}
+            </div>
+          </div>
+          <label class="plain">
+            Exchange
+            <select bind:value={setup.generic.cipher}>
+              <option value="">None</option>
+              <option value="serial">Serial number</option>
+              <option value="locator">Grid locator</option>
+              <option value="text">Text</option>
+            </select>
+          </label>
+          {#if setup.generic.cipher === "text"}
+            <label class="plain">
+              Exchange name
+              <input bind:value={setup.generic.cipher_label} placeholder="e.g. Temp or Shire" />
+            </label>
+          {/if}
+          <label class="check">
+            <input type="checkbox" bind:checked={setup.generic.include_rst} />
+            Exchange RST
+          </label>
+        {/if}
         {#if localTime}
           <label>
             Your local time zone during the contest
@@ -228,7 +322,12 @@
           <input class="mono" bind:value={setup.sent_number} inputmode="numeric" />
         </label>
       {/if}
-      {#if contest?.serial_per_band}
+      {#if generic && setup.generic.cipher === "serial"}
+        <label class="check">
+          <input type="checkbox" bind:checked={setup.serial_per_band} />
+          Separate serial numbers on each band
+        </label>
+      {:else if contest?.serial_per_band}
         <p class="hint">Serial numbers run separately on each band in this contest.</p>
       {:else if contest?.exchange.includes("serial")}
         <label class="check">

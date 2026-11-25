@@ -57,8 +57,9 @@
   let futureTime = $derived(isFutureQsoTime(parseDateTimeText(timeText)));
   let error = $state("");
   let hasNr = $derived(contest.exchange.includes("serial"));
-  let hasExch = $derived(contest.exchange.includes("number"));
+  let hasExch = $derived(contest.exchange.includes("number") || contest.exchange.includes("text"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
+  let hasRst = $derived(!contest.generic || contest.exchange.includes("rst"));
   let general = $derived(contest.general);
   // An imported band or mode the list doesn't have stays selectable.
   let bandChoices = $derived(contest.bands.includes(r.band) ? contest.bands : [...contest.bands, r.band]);
@@ -127,14 +128,14 @@
     </div>
     <h3>Sent</h3>
     <div class="row three">
-      <label>RST <input class="mono" bind:value={qso.sent_rst} /></label>
+      {#if hasRst}<label>RST <input class="mono" bind:value={qso.sent_rst} /></label>{/if}
       {#if hasNr}<label>Nr <input class="mono" bind:value={qso.sent_nr} /></label>{/if}
       {#if hasExch}<label>{contest.number_label} <input class="mono" bind:value={qso.sent_exch} /></label>{/if}
       {#if hasLoc}<label>Locator <input class="mono" bind:value={qso.sent_locator} maxlength="10" /></label>{/if}
     </div>
     <h3>Received</h3>
     <div class="row three">
-      <label>RST <input class="mono" bind:value={qso.rcvd_rst} /></label>
+      {#if hasRst}<label>RST <input class="mono" bind:value={qso.rcvd_rst} /></label>{/if}
       {#if hasNr}<label>Nr <input class="mono" bind:value={qso.rcvd_nr} /></label>{/if}
       {#if hasExch}<label>{contest.number_label} <input class="mono" bind:value={qso.rcvd_exch} /></label>{/if}
       {#if hasLoc || general}

@@ -252,6 +252,7 @@ mod tests {
             categories: Default::default(),
             bonus_bands: Default::default(),
             soapbox: String::new(),
+            generic: Default::default(),
         }
     }
 

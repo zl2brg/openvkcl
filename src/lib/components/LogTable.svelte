@@ -14,7 +14,6 @@
     rows,
     contest,
     highlight = "",
-    callFilter = "",
     range = $bindable({ from: "", to: "" }),
     onedit,
     ondelete,
@@ -24,8 +23,6 @@
     contest: ContestDef;
     /** Rows with this call are highlighted. */
     highlight?: string;
-    /** The call being typed on the entry line: only its contacts are shown, as in N1MM. */
-    callFilter?: string;
     /** Dates to show the log between, in general logs. */
     range?: DateRange;
     onedit: (row: QsoRow) => void;
@@ -35,7 +32,7 @@
   } = $props();
 
   let hasNr = $derived(contest.exchange.includes("serial"));
-  let hasExch = $derived(contest.exchange.includes("number"));
+  let hasExch = $derived(contest.exchange.includes("number") || contest.exchange.includes("text"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let hasRework = $derived(contest.rework.kind !== "never");
   let general = $derived(contest.general);
@@ -68,16 +65,10 @@
   }
 
   // Numbered before filtering, so a match keeps its place in the log.
-  // The search box wins; otherwise the call being typed narrows the log to it.
-  let byCall = $derived(query ? "" : callFilter.trim().toUpperCase());
-
   let matching = $derived.by(() => {
     const inRange = dated ? rangeTest(range) : null;
     return newestFirst.filter(
-      ({ r }) =>
-        (!query || matches(r)) &&
-        (!byCall || r.call.toUpperCase().includes(byCall)) &&
-        (!inRange || inRange(r.time)),
+      ({ r }) => (!query || matches(r)) && (!inRange || inRange(r.time)),
     );
   });
 
@@ -86,7 +77,6 @@
   let limit = $state(PAGE);
   $effect(() => {
     query;
-    byCall;
     range.from;
     range.to;
     sort;
@@ -311,11 +301,7 @@
         <button class="clear" onclick={() => (range = { from: "", to: "" })} title="Show all dates">Clear dates</button>
       {/if}
     {/if}
-    {#if byCall}
-      <span class="count" title="Contacts with the call being typed; clear the call to see the whole log">
-        {matching.length.toLocaleString()} with {byCall}
-      </span>
-    {:else if query || dated}
+    {#if query || dated}
       <span class="count">{matching.length.toLocaleString()} of {rows.length.toLocaleString()}</span>
     {/if}
   </div>
@@ -392,9 +378,7 @@
         {:else}
           <tr>
             <td colspan={columns.length} class="empty">
-              {#if byCall && rows.length}
-                No contacts with {byCall} yet.
-              {:else if query && rows.length}
+              {#if query && rows.length}
                 No contacts match “{query}”{dated ? " between those dates" : ""}.
               {:else if dated && rows.length}
                 No contacts between those dates.

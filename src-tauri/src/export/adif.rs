@@ -129,6 +129,7 @@ mod tests {
             categories: Default::default(),
             bonus_bands: Default::default(),
             soapbox: String::new(),
+            generic: Default::default(),
         };
         let file = "<EOH><CALL:6>JA1ABC <QSO_DATE:8>20260105 <TIME_ON:6>083015 <BAND:3>20m <MODE:4>MFSK \
                     <SUBMODE:3>FT4 <NAME:4>Taro <LOTW_QSL_RCVD:1>Y <TX_PWR:3>100 \

@@ -13,6 +13,7 @@ fn exch(def: &ContestDef, rst: &str, nr: &str, number: &str, locator: &str) -> S
             ExchField::Serial => num(nr),
             ExchField::Number => num(number),
             ExchField::Locator => format!("{:<6}", locator.to_ascii_uppercase()),
+            ExchField::Text => format!("{:<6}", number),
         })
         .collect::<Vec<_>>()
         .join(" ")
@@ -53,7 +54,10 @@ pub fn render(def: &ContestDef, setup: &LogSetup, qsos: &[Qso], score: &Score, v
         header(&cat.key, value);
     }
     header("GRID-LOCATOR", &st.locator);
-    header("CLAIMED-SCORE", &format!("{:.0}", score.total));
+    header(
+        "CLAIMED-SCORE",
+        &format!("{:.0}", if def.generic { score.qsos as f64 } else { score.total }),
+    );
     header("CLUB", &st.club);
     header("OPERATORS", &st.operators.to_ascii_uppercase());
     header("NAME", &st.name);
@@ -134,6 +138,7 @@ mod tests {
                 .collect(),
             bonus_bands: BTreeMap::new(),
             soapbox: "Line one\nLine two".into(),
+            generic: Default::default(),
         }
     }
 

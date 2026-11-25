@@ -146,6 +146,11 @@ impl AppState {
             .ok_or_else(|| format!("Unknown contest '{id}'"))
     }
 
+    /// The contest for this log, with a generic contest's own choices applied.
+    fn contest_for(&self, setup: &LogSetup) -> CmdResult<ContestDef> {
+        Ok(self.find_contest(&setup.contest_id)?.prepare(setup))
+    }
+
     fn remember_log(&self, path: &Path) {
         let mut s = self.settings.lock().unwrap();
         s.last_log = Some(path.display().to_string());
@@ -408,15 +413,17 @@ fn draft_qso(log: &OpenLog, input: &QsoInput) -> Qso {
         band: crate::bands::canonical(&input.band),
         mode: input.mode.clone(),
         freq_khz: input.freq_khz,
-        sent_rst: rst(&input.sent_rst),
+        sent_rst: if log.def.has_field(ExchField::Rst) { rst(&input.sent_rst) } else { String::new() },
         sent_nr: next_sent_nr(log, &input.band),
         sent_locator,
-        rcvd_rst: rst(&input.rcvd_rst),
+        rcvd_rst: if log.def.has_field(ExchField::Rst) { rst(&input.rcvd_rst) } else { String::new() },
         rcvd_nr: input.rcvd_nr.trim().to_string(),
         rcvd_locator: geo::normalize_locator(&input.rcvd_locator),
         operator: String::new(),
         sent_exch: if log.def.has_field(ExchField::Number) {
             log.setup.sent_number.trim().to_string()
+        } else if log.def.has_field(ExchField::Text) {
+            input.sent_exch.trim().to_string()
         } else {
             String::new()
         },
@@ -462,7 +469,7 @@ pub fn save_settings(state: State<AppState>, settings: Settings) -> CmdResult<()
 
 #[tauri::command]
 pub fn new_log(state: State<AppState>, path: String, setup: LogSetup) -> CmdResult<LogView> {
-    let def = state.find_contest(&setup.contest_id)?;
+    let def = state.contest_for(&setup)?;
     let path = PathBuf::from(path);
     let store = Store::create(&path, &setup)?;
     let mut log = OpenLog::new(path.clone(), store, setup, def, Vec::new());
@@ -476,7 +483,7 @@ pub fn new_log(state: State<AppState>, path: String, setup: LogSetup) -> CmdResu
 pub fn open_log(state: State<AppState>, path: String) -> CmdResult<LogView> {
     let path = PathBuf::from(path);
     let (store, setup) = Store::open(&path)?;
-    let def = state.find_contest(&setup.contest_id)?;
+    let def = state.contest_for(&setup)?;
     if store.upgraded_from.is_some_and(|v| v < 2)
         && def.has_field(ExchField::Number)
         && !def.has_field(ExchField::Serial)
@@ -506,7 +513,7 @@ pub fn get_log(state: State<AppState>) -> Option<LogView> {
 
 #[tauri::command]
 pub fn update_setup(state: State<AppState>, setup: LogSetup) -> CmdResult<LogView> {
-    let def = state.find_contest(&setup.contest_id)?;
+    let def = state.contest_for(&setup)?;
     with_log(&state, |log| {
         log.store.save_setup(&setup)?;
         log.setup = setup;
@@ -1103,6 +1110,7 @@ mod tests {
             categories: Default::default(),
             bonus_bands: Default::default(),
             soapbox: String::new(),
+            generic: Default::default(),
         };
         let dir = std::env::temp_dir().join(format!("openvkcl-cmd-{}-{}", std::process::id(), calls.join("")));
         std::fs::create_dir_all(&dir).unwrap();

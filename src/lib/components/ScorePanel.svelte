@@ -142,6 +142,13 @@
     {/if}
     <ClusterPanel {spots} status={clusterStatus} qsos={view.qsos} {onspot} />
   {:else}
+    {#if view.contest.generic}
+      <section>
+        <h3>Contacts</h3>
+        <div class="total">{view.score.qsos.toLocaleString()}</div>
+        <p class="muted">Not scored here. Cabrillo lists this count as the claimed score.</p>
+      </section>
+    {:else}
     <section>
       <h3>Score</h3>
       <div class="total">{fmt(view.score.total)}</div>
@@ -171,6 +178,7 @@
         <p class="muted">{view.score.dupes} dupes, {view.score.invalid} invalid</p>
       {/if}
     </section>
+    {/if}
 
     <section>
       <h3>Contest time</h3>

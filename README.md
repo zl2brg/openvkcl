@@ -33,6 +33,12 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   station can be worked again on that band and mode. Click a column header to
   sort the log; use **Search log** (Ctrl+F / ⌘F) to find a callsign.
 - Distance scoring from 6, 8 or 10-character Maidenhead locators.
+- A generic contest for events that are not in the list, such as QRP Hours, a
+  sprint whose exchange is the air temperature, or the VK shires contest. You
+  name it, set the length and bands, and choose the exchange: nothing, a
+  serial, a grid locator, or a text field. RST is optional. Nothing is a dupe
+  and nothing is scored; the side panel counts contacts, and Cabrillo lists
+  that count as the claimed score.
 - General logging for everyday operating and DX chasing: no contest rules, ADIF
   modes (SSB, CW, FT8, FT4, …) on every band from 2190m up, name, QTH, comment
   and QSL card / LoTW / eQSL status for each contact. As you type a call it
@@ -56,13 +62,15 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
 - Radio control for any radio Hamlib supports (just pick the model and serial
   port), FLRig, TCI (cudaSDR, ExpertSDR, Thetis) or a FlexRadio over the
   network: band, mode and frequency follow the radio.
-- A voice keyer on F1–F12, as in N1MM: Run and Search & Pounce sets of
-  recorded messages, played to the radio's sound input with PTT through the
-  radio connection (or its VOX). F1 is CQ, and **Alt+R** repeats it after a
-  pause (**Ctrl+R** sets it) until you type a call or press **Esc**, which also
-  stops transmitting. **Ctrl+Shift+F-key** records a message from the
-  microphone; **Shift+F-key** plays the other set's key and **Alt+U** switches
-  sets. Set the sound devices and messages under **Voice keyer…**.
+- A voice keyer on F1–F12, as in N1MM, turned on with the **Voice keyer**
+  tick in the toolbar (off until you tick it). It has Run and Search & Pounce
+  sets of recorded messages, played to the radio's sound input with PTT
+  through the radio connection (or its VOX). F1 is CQ, and **Alt+R** repeats
+  it after a pause (**Ctrl+R** sets it) until you type a call or press
+  **Esc**, which also stops transmitting. **Ctrl+Shift+F-key** records a
+  message from the microphone; **Shift+F-key** plays the other set's key and
+  **Alt+U** switches sets. Set the sound devices and messages under
+  **Voice keyer…**, which appears next to the tick.
 - Super Check Partial: matching calls from MASTER.SCP and your log, plus N+1
   (one character different) suggestions, as you type. Download the latest
   MASTER.SCP from **Lookups…** or import your own file. MASTER.SCP and the
@@ -94,8 +102,8 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
    Super Check Partial matches appear underneath (calls already in the log are
    highlighted; click one to use it), with the QRZ.com details when enabled.
 3. **Space** moves to the next exchange field, **Enter** logs, **Esc** clears.
-   RST sent is shown before RST received. In a contest, Space goes from the
-   call to RST received, then the serial, number and locator. In a general log
+   RST sent is shown before RST received. In a contest, Space and Tab go from
+   the call to RST sent, then RST received, then the serial, number and locator. In a general log
    it goes call, RST sent, RST received, name, then comment. **Tab** does the
    same (and also works in name and comment, where Space types a space), but
    stops on the **Log** button after the last field; **Shift+Tab** goes back.

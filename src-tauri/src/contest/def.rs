@@ -10,6 +10,9 @@ pub struct ContestDef {
     /// A general log for everyday and DX operating: no contest period, scoring or dupes.
     #[serde(default)]
     pub general: bool,
+    /// The operator names it and chooses the exchange. No dupes and no score.
+    #[serde(default)]
+    pub generic: bool,
     pub cabrillo_name: String,
     #[serde(default)]
     pub rules_url: String,
@@ -84,6 +87,8 @@ pub enum ExchField {
     /// contest can use both.
     Number,
     Locator,
+    /// Free text, such as an air temperature or a shire code. Not checked.
+    Text,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,6 +104,8 @@ pub enum Dim {
 pub enum ReworkKind {
     /// Each station once per `per` for the whole contest.
     Never,
+    /// Every contact counts. Nothing is a dupe.
+    Off,
     /// Once per `per` in each time block.
     Block,
     /// Again after `minutes` have passed.
@@ -233,6 +240,8 @@ pub enum Points {
         #[serde(default)]
         max_locator_chars: Option<usize>,
     },
+    /// Contacts are counted and not scored.
+    None,
 }
 
 fn one() -> f64 {
@@ -310,6 +319,42 @@ impl ContestDef {
 
     pub fn has_field(&self, f: ExchField) -> bool {
         self.exchange.contains(&f)
+    }
+
+    /// A generic contest takes its name, length, bands and exchange from the log.
+    pub fn prepare(mut self, setup: &crate::model::LogSetup) -> Self {
+        if !self.generic {
+            return self;
+        }
+        let chosen = &setup.generic;
+        let name = chosen.name.trim();
+        if !name.is_empty() {
+            self.name = name.to_string();
+            self.cabrillo_name = name.to_string();
+        }
+        if chosen.duration_minutes > 0 {
+            self.duration_minutes = chosen.duration_minutes;
+        }
+        if !chosen.bands.is_empty() {
+            self.bands = chosen.bands.clone();
+        }
+        self.exchange.clear();
+        if chosen.include_rst {
+            self.exchange.push(ExchField::Rst);
+        }
+        match chosen.cipher.as_str() {
+            "serial" => self.exchange.push(ExchField::Serial),
+            "locator" => self.exchange.push(ExchField::Locator),
+            "text" => {
+                self.exchange.push(ExchField::Text);
+                let label = chosen.cipher_label.trim();
+                self.number_label = if label.is_empty() { "Cipher".into() } else { label.to_string() };
+            }
+            _ => {}
+        }
+        self.rework.kind = ReworkKind::Off;
+        self.scoring.points = Points::None;
+        self
     }
 
     pub fn block_of(&self, start: DateTime<Utc>, t: DateTime<Utc>) -> i64 {

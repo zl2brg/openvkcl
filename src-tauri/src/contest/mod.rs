@@ -7,6 +7,7 @@ use std::path::Path;
 
 const BUILTIN: &[(&str, &str)] = &[
     ("general.toml", include_str!("../../contests/general.toml")),
+    ("generic.toml", include_str!("../../contests/generic.toml")),
     ("wia-rd.toml", include_str!("../../contests/wia-rd.toml")),
     ("wia-tt.toml", include_str!("../../contests/wia-tt.toml")),
     ("wia-ha.toml", include_str!("../../contests/wia-ha.toml")),
@@ -89,6 +90,7 @@ mod tests {
             categories: Default::default(),
             bonus_bands: Default::default(),
             soapbox: String::new(),
+            generic: Default::default(),
         }
     }
 
@@ -128,6 +130,33 @@ mod tests {
         assert_eq!(def("wia-tt").serial_per_band_when, SerialPerBandWhen::MultiTx);
         assert_eq!(def("wia-rd").serial_per_band_when, SerialPerBandWhen::Never);
         assert_eq!(def("wia-ha").serial_per_band_when, SerialPerBandWhen::Never);
+    }
+
+    #[test]
+    fn generic_contest_counts_repeat_contacts() {
+        use def::ExchField;
+        let start = Utc.with_ymd_and_hms(2026, 6, 1, 0, 0, 0).unwrap();
+        let mut setup = setup("generic", start);
+        setup.generic.name = "QRP Hours".into();
+        setup.generic.duration_minutes = 120;
+        setup.generic.bands = vec!["80m".into(), "40m".into()];
+        setup.generic.cipher = "text".into();
+        setup.generic.cipher_label = "Temp".into();
+        setup.generic.include_rst = false;
+        let d = def("generic").prepare(&setup);
+        assert_eq!(d.name, "QRP Hours");
+        assert_eq!(d.cabrillo_name, "QRP Hours");
+        assert_eq!(d.bands, ["80m".to_string(), "40m".to_string()]);
+        assert_eq!(d.exchange, vec![ExchField::Text]);
+        assert_eq!(d.number_label, "Temp");
+        let t = start + Duration::minutes(10);
+        let mut a = qso(1, t, "VK2ABC", "80m", "PH");
+        let mut b = qso(2, t + Duration::minutes(1), "VK2ABC", "80m", "PH");
+        a.rcvd_exch = "12".into();
+        b.rcvd_exch = "11".into();
+        let ev = evaluate(&d, &setup, &[a, b]);
+        assert_eq!((ev.score.qsos, ev.score.dupes, ev.score.total), (2, 0, 0.0));
+        assert!(ev.results.iter().all(|r| !r.dupe && r.points == 0.0 && r.warning.is_none()));
     }
 
     #[test]

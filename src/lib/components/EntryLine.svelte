@@ -37,7 +37,6 @@
     onkeyerchange,
     onlog,
     check = $bindable(null),
-    typed = $bindable(""),
   }: {
     contest: ContestDef;
     setup: LogSetup;
@@ -52,8 +51,6 @@
     onkeyerchange: (config: KeyerConfig) => void;
     onlog: (input: QsoInput) => Promise<void>;
     check?: CheckResult | null;
-    /** The call being typed, in capitals, for the log to filter on. */
-    typed?: string;
   } = $props();
 
   let call = $state("");
@@ -61,6 +58,7 @@
   let rcvdRst = $state("");
   let rcvdNr = $state("");
   let rcvdExch = $state("");
+  let sentExch = $state("");
   let rcvdLoc = $state("");
   let name = $state("");
   let comment = $state("");
@@ -77,6 +75,7 @@
   let callInput: HTMLInputElement | undefined = $state();
   let nrInput: HTMLInputElement | undefined = $state();
   let exchInput: HTMLInputElement | undefined = $state();
+  let sentExchInput: HTMLInputElement | undefined = $state();
   let locInput: HTMLInputElement | undefined = $state();
   let rstInput: HTMLInputElement | undefined = $state();
   let rstSentInput: HTMLInputElement | undefined = $state();
@@ -86,11 +85,13 @@
 
   let hasNr = $derived(contest.exchange.includes("serial"));
   let hasExch = $derived(contest.exchange.includes("number"));
+  let hasText = $derived(contest.exchange.includes("text"));
   let hasLoc = $derived(contest.exchange.includes("locator"));
+  let hasRst = $derived(!contest.generic || contest.exchange.includes("rst"));
   let general = $derived(contest.general);
   let defaultRst = $derived(rstFor(mode));
-  let sentProblem = $derived(reportProblem(mode, sentRst));
-  let rcvdProblem = $derived(reportProblem(mode, rcvdRst));
+  let sentProblem = $derived(hasRst ? reportProblem(mode, sentRst) : null);
+  let rcvdProblem = $derived(hasRst ? reportProblem(mode, rcvdRst) : null);
   /** What's wrong with the reports, shown in the status line until fixed. */
   let rstProblem = $derived(
     sentProblem ? `RST sent ${sentProblem}` : rcvdProblem ? `RST rcvd ${rcvdProblem}` : "",
@@ -126,6 +127,7 @@
       rcvd_rst: rcvdRst.trim(),
       rcvd_nr: rcvdNr.trim(),
       rcvd_exch: rcvdExch.trim() || (useKnown ? check?.known_exch : "") || "",
+      sent_exch: sentExch.trim(),
       rcvd_locator: rcvdLoc.trim() || (useKnown ? check?.known_locator : "") || "",
       name: name.trim() || (useKnown ? knownName : "") || "",
       qth: "",
@@ -133,14 +135,17 @@
     };
   }
 
+  let checkSeq = 0;
   $effect(() => {
     const draft = input(false);
     logVersion;
+    const seq = ++checkSeq;
     const timer = setTimeout(async () => {
       try {
-        check = await api.checkQso(draft);
+        const result = await api.checkQso(draft);
+        if (seq === checkSeq) check = result;
       } catch {
-        check = null;
+        if (seq === checkSeq) check = null;
       }
     }, 80);
     return () => clearTimeout(timer);
@@ -159,14 +164,7 @@
   });
 
   let callKey = $derived(call.trim().toUpperCase());
-  $effect(() => {
-    typed = callKey;
-  });
   /** The name the log or QRZ.com already has for this station, used when left blank. */
-  /** Show the voice keyer's F-key bar: kept on this computer between runs. */
-  let showKeyer = $state(localStorage.getItem("showKeyer") !== "0");
-  $effect(() => localStorage.setItem("showKeyer", showKeyer ? "1" : "0"));
-
   let knownName = $derived(check?.known_name ?? qrz?.name ?? "");
   let plausible = $derived(/^[A-Z0-9/]{3,}$/.test(callKey) && /\d/.test(callKey) && /[A-Z]/.test(callKey));
 
@@ -247,6 +245,7 @@
     sentRst = "";
     rcvdNr = "";
     rcvdExch = "";
+    sentExch = "";
     rcvdLoc = "";
     name = "";
     comment = "";
@@ -283,13 +282,13 @@
     }
     return [
       callInput,
-      rstInput,
+      hasRst ? rstSentInput : undefined,
+      hasRst ? rstInput : undefined,
       hasNr ? nrInput : undefined,
-      hasExch ? exchInput : undefined,
+      hasText ? sentExchInput : undefined,
+      hasExch || hasText ? exchInput : undefined,
       hasLoc ? locInput : undefined,
-    ].filter(
-      (x): x is HTMLInputElement => !!x,
-    );
+    ].filter((x): x is HTMLInputElement => !!x);
   }
 
   function step<T>(list: T[], cur: T, dir: number): T {
@@ -354,6 +353,7 @@
       sentRst || defaultRst,
       hasNr ? check?.sent_nr : "",
       hasExch ? setup.sent_number : "",
+      hasText ? sentExch : "",
       hasLoc ? setup.station.locator.toUpperCase() : "",
     ]
       .filter(Boolean)
@@ -362,17 +362,35 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="entry" role="group" aria-label="QSO entry" {onkeydown}>
+<div class="entry" class:steady={!!keyer} role="group" aria-label="QSO entry" {onkeydown}>
   <div class="controls">
     <label>
       Band
-      <select bind:value={band} disabled={rigDriven}>
+      <select
+        value={band}
+        class:locked={rigDriven}
+        tabindex={rigDriven ? -1 : 0}
+        title={rigDriven ? "Following the radio" : ""}
+        onchange={(e) => {
+          if (rigDriven) e.currentTarget.value = band;
+          else band = e.currentTarget.value;
+        }}
+      >
         {#each contest.bands as b (b)}<option value={b}>{b}</option>{/each}
       </select>
     </label>
     <label>
       Mode
-      <select bind:value={mode} disabled={rigDriven}>
+      <select
+        value={mode}
+        class:locked={rigDriven}
+        tabindex={rigDriven ? -1 : 0}
+        title={rigDriven ? "Following the radio" : ""}
+        onchange={(e) => {
+          if (rigDriven) e.currentTarget.value = mode;
+          else mode = e.currentTarget.value;
+        }}
+      >
         {#each contest.modes as m (m)}<option value={m}>{m}</option>{/each}
       </select>
     </label>
@@ -387,11 +405,6 @@
       />
       Enter time
     </label>
-    {#if keyer}
-      <label class="check" title="Show the F-key voice messages. Hidden, the F-keys don't play anything.">
-        <input type="checkbox" bind:checked={showKeyer} /> Voice keys
-      </label>
-    {/if}
     {#if manualTime}
       <input class="mono time" bind:value={timeText} title="QSO time, {zoneLabel()} (YYYY-MM-DD HH:MM)" />
       {#if futureTime}
@@ -424,32 +437,34 @@
         spellcheck="false"
       />
     </label>
-    <label class="rst">
-      RST sent
-      <input
-        class="mono"
-        class:invalid={!!sentProblem}
-        bind:this={rstSentInput}
-        bind:value={sentRst}
-        placeholder={defaultRst}
-        maxlength="3"
-        autocomplete="off"
-        title={sentProblem ? `RST sent ${sentProblem}` : ""}
-      />
-    </label>
-    <label class="rst">
-      RST rcvd
-      <input
-        class="mono"
-        class:invalid={!!rcvdProblem}
-        bind:this={rstInput}
-        bind:value={rcvdRst}
-        placeholder={defaultRst}
-        maxlength="3"
-        autocomplete="off"
-        title={rcvdProblem ? `RST rcvd ${rcvdProblem}` : ""}
-      />
-    </label>
+    {#if hasRst}
+      <label class="rst">
+        RST sent
+        <input
+          class="mono"
+          class:invalid={!!sentProblem}
+          bind:this={rstSentInput}
+          bind:value={sentRst}
+          placeholder={defaultRst}
+          maxlength="4"
+          autocomplete="off"
+          title={sentProblem ? `RST sent ${sentProblem}` : ""}
+        />
+      </label>
+      <label class="rst">
+        RST rcvd
+        <input
+          class="mono"
+          class:invalid={!!rcvdProblem}
+          bind:this={rstInput}
+          bind:value={rcvdRst}
+          placeholder={defaultRst}
+          maxlength="4"
+          autocomplete="off"
+          title={rcvdProblem ? `RST rcvd ${rcvdProblem}` : ""}
+        />
+      </label>
+    {/if}
     {#if !general}
       <label class="sent">
         Sent
@@ -466,6 +481,16 @@
       <label class="nr">
         Nr rcvd
         <input class="mono" bind:this={nrInput} bind:value={rcvdNr} inputmode="numeric" autocomplete="off" />
+      </label>
+    {/if}
+    {#if hasText}
+      <label class="text">
+        {contest.number_label} sent
+        <input class="mono" bind:this={sentExchInput} bind:value={sentExch} data-text="1" autocomplete="off" />
+      </label>
+      <label class="text">
+        {contest.number_label}
+        <input class="mono" bind:this={exchInput} bind:value={rcvdExch} data-text="1" autocomplete="off" />
       </label>
     {/if}
     {#if hasExch}
@@ -560,17 +585,17 @@
     {/if}
   </div>
 
-  <!-- Empty rows hold the suggestions' and QRZ line's places when they're not
-       shown, so the panel doesn't change height as a call is typed and the log
-       below stays put. -->
-  {#if !(callKey && scp && (scp.partial.length || scp.near.length))}
-    <div class="scp"></div>
-  {/if}
-  {#if !plausible}
-    <div class="qrz"></div>
+  {#if keyer}
+    <KeyerBar
+      config={keyer}
+      phone={modeClass(mode) === "PH"}
+      call={callKey}
+      freqHz={rig.connected ? rig.freq_hz : null}
+      onchange={onkeyerchange}
+    />
   {/if}
 
-  {#if callKey && scp && (scp.partial.length || scp.near.length)}
+  {#if callKey && scp && !scp.exact && (scp.partial.length || scp.near.length)}
     <div class="scp mono" aria-label="Super Check Partial">
       {#each scp.partial as c (c)}
         <button tabindex="-1" class:worked={worked.has(c)} onclick={() => pick(c)} title={worked.has(c) ? "In log" : ""}>{c}</button>
@@ -611,16 +636,6 @@
       <a class="link" href="https://www.qrz.com/db/{callKey}" onclick={openQrz} tabindex="-1">QRZ.com ↗</a>
     </div>
   {/if}
-
-  {#if keyer && showKeyer}
-    <KeyerBar
-      config={keyer}
-      phone={modeClass(mode) === "PH"}
-      call={callKey}
-      freqHz={rig.connected ? rig.freq_hz : null}
-      onchange={onkeyerchange}
-    />
-  {/if}
 </div>
 
 <style>
@@ -638,6 +653,9 @@
     gap: 14px;
     align-items: end;
     flex-wrap: wrap;
+  }
+  .controls select.locked {
+    pointer-events: none;
   }
   .fields {
     display: flex;
@@ -676,9 +694,16 @@
   .loc input {
     width: 11ch;
   }
+  .fields input:focus {
+    outline: 2px solid var(--accent);
+    outline-offset: -1px;
+  }
   .fields input.invalid {
     border-color: var(--bad);
-    outline-color: var(--bad);
+  }
+  .fields input.invalid:focus {
+    outline: 2px solid var(--bad);
+    outline-offset: -1px;
   }
   .rst input {
     width: 5.5ch;
@@ -707,11 +732,14 @@
     margin-left: auto;
   }
   .status {
-    height: 1.4rem;
+    min-height: 1.4rem;
     display: flex;
     gap: 12px;
     align-items: center;
     font-size: 0.95rem;
+  }
+  .entry.steady .status {
+    height: 1.4rem;
     white-space: nowrap;
     overflow: hidden;
   }
@@ -742,8 +770,7 @@
     gap: 4px;
     align-items: center;
     align-content: flex-start;
-    /* Two lines of suggestions, whether or not there are any. */
-    height: 3.6rem;
+    max-height: 4.2rem;
     overflow: hidden;
   }
   .scp button,
@@ -768,9 +795,6 @@
     gap: 12px;
     align-items: center;
     font-size: 0.9rem;
-    height: 1.6rem;
-    white-space: nowrap;
-    overflow: hidden;
   }
   .qrz .link {
     margin-left: auto;

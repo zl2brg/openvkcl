@@ -90,6 +90,7 @@
     return () => {
       clearTimeout(repeatTimer);
       unlisten.then((f) => f());
+      api.keyerStop().catch(() => {});
     };
   });
 

@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { timeZone } from "./timezone.svelte";
 
-export type ExchField = "rst" | "serial" | "number" | "locator";
+export type ExchField = "rst" | "serial" | "number" | "locator" | "text";
 
 export interface CategoryField {
   key: string;
@@ -15,6 +15,8 @@ export interface ContestDef {
   name: string;
   /** A general (DX) log: no contest period, scoring or dupes. */
   general: boolean;
+  /** The operator names it and chooses the exchange. No dupes and no score. */
+  generic: boolean;
   cabrillo_name: string;
   rules_url: string;
   duration_minutes: number;
@@ -39,7 +41,7 @@ export interface ContestDef {
     not_own: boolean;
   } | null;
   rework: {
-    kind: "never" | "block" | "interval";
+    kind: "never" | "block" | "interval" | "off";
     minutes: number;
     per: string[];
     new_square_resets: boolean;
@@ -86,6 +88,18 @@ export interface LogSetup {
   categories: Record<string, string>;
   bonus_bands: Record<string, string[]>;
   soapbox: string;
+  /** Choices for a generic contest. */
+  generic: GenericOptions;
+}
+
+export interface GenericOptions {
+  name: string;
+  duration_minutes: number;
+  bands: string[];
+  /** "serial", "locator", "text", or "" for none. */
+  cipher: string;
+  cipher_label: string;
+  include_rst: boolean;
 }
 
 export interface Qso {
@@ -237,6 +251,7 @@ export interface QsoInput {
   sent_rst: string;
   rcvd_rst: string;
   rcvd_nr: string;
+  sent_exch: string;
   rcvd_exch: string;
   rcvd_locator: string;
   name: string;
@@ -645,20 +660,20 @@ export function modeClass(mode: string): "PH" | "CW" | "DG" {
 /** Signal report assumed when none is typed; "" for modes that exchange dB reports. */
 /**
  * Why `rst` isn't a valid report in `mode`, or null if it is (blank uses the
- * default). Phone is RS like 59, CW and RTTY are RST like 599, WSJT-X modes
- * report dB like -10, and a contest's DG takes either RST or dB.
+ * default). Phone, CW and RTTY take 59 or 599. WSJT-X modes report dB like
+ * -10, and a contest's DG takes either of those or a dB report.
  */
 export function reportProblem(mode: string, rst: string): string | null {
-  const r = rst.trim();
-  if (!r) return null;
+  const r = rst.trim().replace(/\+$/, "");
+  if (!rst.trim()) return null;
   const rs = /^[1-5][1-9]$/.test(r);
   const rstOk = /^[1-5][1-9][1-9]$/.test(r);
-  const db = /^[+-]\d{1,2}$/.test(r);
-  if (mode === "DG") return rstOk || db ? null : "must be like 599, or a report in dB like -10";
-  if (["RY", "RTTY", "PSK31", "OLIVIA", "SSTV"].includes(mode) || modeClass(mode) === "CW") {
-    return rstOk ? null : "must be like 599: readability 1–5, then strength and tone 1–9";
+  const signal = rs || rstOk;
+  const db = /^[+-]\d{1,2}$/.test(rst.trim());
+  if (mode === "DG") return signal || db ? null : "must be like 59 or 599, or a report in dB like -10";
+  if (["RY", "RTTY", "PSK31", "OLIVIA", "SSTV"].includes(mode) || modeClass(mode) === "CW" || modeClass(mode) === "PH") {
+    return signal ? null : "must be like 59 or 599";
   }
-  if (modeClass(mode) === "PH") return rs ? null : "must be like 59: readability 1–5, then strength 1–9";
   return db ? null : "must be a signal report in dB like -10 or +05";
 }
 

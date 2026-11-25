@@ -109,6 +109,12 @@ fn is_rst(r: &str) -> bool {
     r.len() == 3 && is_rs(&r[..2]) && (b'1'..=b'9').contains(&r.as_bytes()[2])
 }
 
+/// RS or RST, with an optional trailing plus (59, 599, 59+).
+fn is_signal(r: &str) -> bool {
+    let r = r.strip_suffix('+').unwrap_or(r);
+    is_rs(r) || is_rst(r)
+}
+
 fn is_db(r: &str) -> bool {
     let b = r.as_bytes();
     (2..=3).contains(&b.len()) && (b[0] == b'+' || b[0] == b'-') && b[1..].iter().all(u8::is_ascii_digit)
@@ -122,16 +128,14 @@ pub fn check_report(mode: &str, rst: &str) -> Option<&'static str> {
         return None;
     }
     let ok = match report(mode) {
-        Report::Rs => is_rs(rst),
-        Report::Rst => is_rst(rst),
+        Report::Rs | Report::Rst => is_signal(rst),
         Report::Db => is_db(rst),
-        Report::RstOrDb => is_rst(rst) || is_db(rst),
+        Report::RstOrDb => is_signal(rst) || is_db(rst),
     };
     (!ok).then_some(match report(mode) {
-        Report::Rs => "must be like 59: readability 1-5, then strength 1-9",
-        Report::Rst => "must be like 599: readability 1-5, then strength and tone 1-9",
+        Report::Rs | Report::Rst => "must be like 59 or 599",
         Report::Db => "must be a signal report in dB like -10 or +05",
-        Report::RstOrDb => "must be like 599, or a report in dB like -10",
+        Report::RstOrDb => "must be like 59 or 599, or a report in dB like -10",
     })
 }
 
@@ -141,20 +145,15 @@ mod tests {
 
     #[test]
     fn reports() {
-        // Phone: RS.
-        for ok in ["59", "57", "11", "33"] {
+        // Phone, CW and RTTY take either RS or RST.
+        for ok in ["59", "57", "599", "579", "59+", "599+"] {
             assert_eq!(check_report("SSB", ok), None, "{ok}");
             assert_eq!(check_report("PH", ok), None, "{ok}");
-        }
-        for bad in ["599", "69", "50", "5", "5x", "abc", "-10"] {
-            assert!(check_report("SSB", bad).is_some(), "{bad}");
-        }
-        // CW and RTTY: RST.
-        for ok in ["599", "579", "111"] {
             assert_eq!(check_report("CW", ok), None, "{ok}");
             assert_eq!(check_report("RY", ok), None, "{ok}");
         }
-        for bad in ["59", "5990", "609", "590", "5nn"] {
+        for bad in ["69", "50", "5", "5x", "abc", "-10", "5990", "609", "5nn"] {
+            assert!(check_report("SSB", bad).is_some(), "{bad}");
             assert!(check_report("CW", bad).is_some(), "{bad}");
         }
         // FT8 and friends: dB.
@@ -166,8 +165,9 @@ mod tests {
         }
         // A contest's DG takes either.
         assert_eq!(check_report("DG", "599"), None);
+        assert_eq!(check_report("DG", "59"), None);
         assert_eq!(check_report("DG", "-12"), None);
-        assert!(check_report("DG", "59").is_some());
+        assert!(check_report("DG", "5nn").is_some());
         // Blank uses the default.
         assert_eq!(check_report("SSB", "  "), None);
     }

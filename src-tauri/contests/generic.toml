@@ -1,0 +1,20 @@
+# A contest the operator describes: name, length, bands and one exchange.
+# Nothing is a dupe and nothing is scored. Cabrillo is for the contest manager.
+id = "generic"
+name = "Generic contest"
+generic = true
+cabrillo_name = "GENERIC"
+duration_minutes = 1440
+default_start_utc = "00:00"
+bands = ["160m", "80m", "40m", "30m", "20m", "17m", "15m", "12m", "10m", "6m", "2m", "70cm"]
+modes = ["PH", "CW", "RY", "DG"]
+exchange = []
+
+[rework]
+kind = "off"
+
+[scoring]
+formula = "sum_points"
+
+[scoring.points]
+kind = "none"

@@ -63,12 +63,16 @@
   let notice = $state("");
   let noticeIsError = $state(false);
   let check = $state<CheckResult | null>(null);
-  /** The call being typed on the entry line: the log shows only its contacts. */
-  let typedCall = $state("");
 
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
   let rigDialog = $state(false);
   let keyerDialog = $state(false);
+  /** The voice keyer is optional and off until ticked. Remembered on this computer. */
+  let showKeyer = $state(localStorage.getItem("voiceKeyer") === "1");
+  $effect(() => {
+    localStorage.setItem("voiceKeyer", showKeyer ? "1" : "0");
+    if (!showKeyer) keyerDialog = false;
+  });
   let aboutDialog = $state(false);
   let lookupDialog = $state(false);
   let editRow = $state<QsoRow | null>(null);
@@ -79,7 +83,6 @@
 
   let entry: EntryLine | undefined = $state();
 
-  let fileName = $derived(view?.path.split(/[\\/]/).pop() ?? "");
   let worked = $derived(new Set(view?.qsos.map((q) => q.call) ?? []));
   let general = $derived(!!view?.contest.general);
   let rangeRows = $derived.by(() => {
@@ -196,6 +199,14 @@
       categories: Object.fromEntries((contest?.categories ?? []).map((c) => [c.key, c.default])),
       bonus_bands: {},
       soapbox: "",
+      generic: {
+        name: "",
+        duration_minutes: contest?.duration_minutes ?? 0,
+        bands: contest?.generic ? [...contest.bands] : [],
+        cipher: "",
+        cipher_label: "",
+        include_rst: true,
+      },
     };
   }
 
@@ -206,10 +217,14 @@
   async function createLog(setup: LogSetup) {
     const year = new Date(setup.start).getUTCFullYear();
     const call = setup.station.callsign.replace(/\//g, "_");
-    const isGeneral = contests.find((c) => c.id === setup.contest_id)?.general;
+    const chosen = contests.find((c) => c.id === setup.contest_id);
+    const isGeneral = chosen?.general;
+    const genericName = chosen?.generic ? setup.generic.name.replace(/[^\w]+/g, "-").replace(/^-|-$/g, "") : "";
     const path = await save({
       title: "Save new log as",
-      defaultPath: isGeneral ? `logbook-${call}.ovkcl` : `${setup.contest_id}-${year}-${call}.ovkcl`,
+      defaultPath: isGeneral
+        ? `logbook-${call}.ovkcl`
+        : `${genericName || setup.contest_id}-${year}-${call}.ovkcl`,
       filters: LOG_FILTER,
     });
     if (!path) return;
@@ -220,7 +235,7 @@
         settings.station = { ...setup.station };
         await api.saveSettings($state.snapshot(settings) as Settings);
       }
-      say(`Created ${withExt(path, "ovkcl")}`);
+      say("Log created");
       refocus();
     } catch (e) {
       say(errorText(e), true);
@@ -243,7 +258,7 @@
     if (!path) return;
     try {
       setView(await api.openLog(path));
-      say(`Opened ${path}`);
+      say("Log opened");
       refocus();
     } catch (e) {
       say(errorText(e), true);
@@ -404,7 +419,6 @@
       {#if view}
         <span>{view.contest.name}</span>
         <span class="mono call">{view.setup.station.callsign}</span>
-        <span class="muted" title={view.path}>{fileName}</span>
       {/if}
     </div>
     <div class="rig" class:on={rig.connected}>
@@ -455,9 +469,14 @@
     {/if}
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
-    <button onclick={() => (keyerDialog = true)} disabled={!settings} title="F-key voice messages and CQ repeat"
-      >Voice keyer…</button
-    >
+    <label class="check" title="Show the F-key voice messages and the Voice keyer settings. Off, the F-keys do nothing.">
+      <input type="checkbox" bind:checked={showKeyer} /> Voice keyer
+    </label>
+    {#if showKeyer}
+      <button onclick={() => (keyerDialog = true)} disabled={!settings} title="F-key voice messages and CQ repeat"
+        >Voice keyer…</button
+      >
+    {/if}
     <button onclick={() => (lookupDialog = true)} title="Super Check Partial and QRZ.com">Lookups…</button>
     <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
@@ -471,14 +490,13 @@
         <EntryLine
           bind:this={entry}
           bind:check
-          bind:typed={typedCall}
           contest={view.contest}
           setup={view.setup}
           {rig}
           {logVersion}
           {worked}
           qrzEnabled={!!settings?.qrz.enabled}
-          keyer={settings?.keyer ?? null}
+          keyer={showKeyer ? (settings?.keyer ?? null) : null}
           onkeyerchange={saveKeyer}
           onlog={logQso}
         />
@@ -487,7 +505,6 @@
             rows={view.qsos}
             contest={view.contest}
             highlight={check?.previous[0]?.call ?? ""}
-            callFilter={typedCall}
             bind:range
             onedit={(r) => (editRow = r)}
             ondelete={(r) => deleteQso(r.id)}
@@ -696,6 +713,13 @@
     height: 20px;
     background: var(--border);
     margin: 0 4px;
+  }
+  nav .check {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.9rem;
+    margin-left: 4px;
   }
   .notice {
     margin-left: auto;

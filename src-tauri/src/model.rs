@@ -42,6 +42,38 @@ pub struct LogSetup {
     pub bonus_bands: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub soapbox: String,
+    /// Choices for a generic contest. Ignored for every other log.
+    #[serde(default)]
+    pub generic: GenericOptions,
+}
+
+/// What the operator chose for a generic contest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GenericOptions {
+    pub name: String,
+    /// Length of the contest. Zero uses the built-in duration.
+    pub duration_minutes: i64,
+    /// Bands in use. Empty uses the built-in list.
+    pub bands: Vec<String>,
+    /// Received exchange: "serial", "locator", "text", or "" for none.
+    pub cipher: String,
+    /// Name of a text cipher, e.g. "Temp" or "Shire".
+    pub cipher_label: String,
+    pub include_rst: bool,
+}
+
+impl Default for GenericOptions {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            duration_minutes: 0,
+            bands: Vec::new(),
+            cipher: String::new(),
+            cipher_label: String::new(),
+            include_rst: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,6 +152,7 @@ pub struct QsoInput {
     pub sent_rst: String,
     pub rcvd_rst: String,
     pub rcvd_nr: String,
+    pub sent_exch: String,
     pub rcvd_exch: String,
     pub rcvd_locator: String,
     pub name: String,

@@ -36,6 +36,7 @@
     onkeyerchange,
     onlog,
     check = $bindable(null),
+    typed = $bindable(""),
   }: {
     contest: ContestDef;
     setup: LogSetup;
@@ -50,6 +51,8 @@
     onkeyerchange: (config: KeyerConfig) => void;
     onlog: (input: QsoInput) => Promise<void>;
     check?: CheckResult | null;
+    /** The call being typed, in capitals, for the log to filter on. */
+    typed?: string;
   } = $props();
 
   let call = $state("");
@@ -140,6 +143,9 @@
   let qrzError = $state("");
 
   let callKey = $derived(call.trim().toUpperCase());
+  $effect(() => {
+    typed = callKey;
+  });
   /** The name the log or QRZ.com already has for this station, used when left blank. */
   /** Show the voice keyer's F-key bar: kept on this computer between runs. */
   let showKeyer = $state(localStorage.getItem("showKeyer") !== "0");
@@ -500,6 +506,16 @@
     {/if}
   </div>
 
+  <!-- Empty rows hold the suggestions' and QRZ line's places when they're not
+       shown, so the panel doesn't change height as a call is typed and the log
+       below stays put. -->
+  {#if !(callKey && scp && (scp.partial.length || scp.near.length))}
+    <div class="scp"></div>
+  {/if}
+  {#if !plausible}
+    <div class="qrz"></div>
+  {/if}
+
   {#if callKey && scp && (scp.partial.length || scp.near.length)}
     <div class="scp mono" aria-label="Super Check Partial">
       {#each scp.partial as c (c)}
@@ -628,11 +644,13 @@
     margin-left: auto;
   }
   .status {
-    min-height: 1.4rem;
+    height: 1.4rem;
     display: flex;
     gap: 12px;
     align-items: center;
     font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
   }
   .strong {
     font-weight: 700;
@@ -660,7 +678,9 @@
     flex-wrap: wrap;
     gap: 4px;
     align-items: center;
-    max-height: 4.2rem;
+    align-content: flex-start;
+    /* Two lines of suggestions, whether or not there are any. */
+    height: 3.6rem;
     overflow: hidden;
   }
   .scp button,
@@ -685,6 +705,9 @@
     gap: 12px;
     align-items: center;
     font-size: 0.9rem;
+    height: 1.6rem;
+    white-space: nowrap;
+    overflow: hidden;
   }
   .qrz .link {
     margin-left: auto;

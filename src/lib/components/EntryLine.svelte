@@ -82,6 +82,7 @@
   let rstSentInput: HTMLInputElement | undefined = $state();
   let nameInput: HTMLInputElement | undefined = $state();
   let commentInput: HTMLInputElement | undefined = $state();
+  let logButton: HTMLButtonElement | undefined = $state();
 
   let hasNr = $derived(contest.exchange.includes("serial"));
   let hasExch = $derived(contest.exchange.includes("number"));
@@ -313,6 +314,17 @@
       const next = step(fieldOrder(), e.target as HTMLInputElement, 1);
       next.focus();
       next.select();
+    } else if (e.key === "Tab" && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      // Tab / Shift+Tab cycle the same fields as Space, including the text ones,
+      // plus the Log button (skipped while it is disabled, as it can't take focus).
+      const stops: HTMLElement[] = [...fieldOrder()];
+      if (logButton && !logButton.disabled) stops.push(logButton);
+      if (stops.includes(e.target as HTMLElement)) {
+        e.preventDefault();
+        const next = step(stops, e.target as HTMLElement, e.shiftKey ? -1 : 1);
+        next.focus();
+        if (next instanceof HTMLInputElement) next.select();
+      }
     } else if (e.altKey && !rigDriven && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
       e.preventDefault();
       band = step(contest.bands, band, e.key === "ArrowUp" ? 1 : -1);
@@ -493,7 +505,7 @@
         <input bind:this={commentInput} bind:value={comment} data-text="1" autocomplete="off" />
       </label>
     {/if}
-    <button class="primary log" onclick={submit} disabled={busy || !call.trim()}>Log ⏎</button>
+    <button class="primary log" bind:this={logButton} onclick={submit} disabled={busy || !call.trim()}>Log ⏎</button>
   </div>
 
   <div class="status">
@@ -540,7 +552,9 @@
       {/if}
     {:else}
       <span class="muted"
-        >Space moves between {general ? "call and report " : ""}fields · Enter logs · Esc clears · Alt+arrows change
+        >{general
+          ? "Space moves between call and report fields · Tab also reaches name, comment and the Log Button"
+          : "Space or Tab moves between fields · Tab also reaches the Log Button"} · Enter logs · Esc clears · Alt+arrows change
         band/mode</span
       >
     {/if}

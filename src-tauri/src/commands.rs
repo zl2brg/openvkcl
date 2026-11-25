@@ -1013,7 +1013,7 @@ pub fn cty_import(state: State<AppState>, path: String) -> CmdResult<CtyStatus> 
     install_cty(&state, &text)
 }
 
-fn qrz_agent() -> String {
+pub fn qrz_agent() -> String {
     format!("OpenVKCL/{VERSION}")
 }
 

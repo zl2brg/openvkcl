@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tokio::sync::Mutex;
+use std::sync::Mutex;
 
 const API_URL: &str = "https://xmldata.qrz.com/xml/current/";
 
@@ -30,7 +30,11 @@ pub struct QrzInfo {
 
 #[derive(Default)]
 pub struct Qrz {
+    /// Held only to read or update the session and cache, never across a
+    /// request, so a slow lookup doesn't hold up the next one.
     inner: Mutex<Inner>,
+    /// One client for every request, so its connection to QRZ.com is reused.
+    client: reqwest::Client,
 }
 
 #[derive(Default)]
@@ -77,8 +81,8 @@ fn parse_info(xml: &str) -> Option<QrzInfo> {
     })
 }
 
-async fn get(params: &[(&str, &str)]) -> Result<String, String> {
-    let resp = reqwest::Client::new()
+async fn get(client: &reqwest::Client, params: &[(&str, &str)]) -> Result<String, String> {
+    let resp = client
         .get(API_URL)
         .query(params)
         .timeout(std::time::Duration::from_secs(10))
@@ -88,11 +92,11 @@ async fn get(params: &[(&str, &str)]) -> Result<String, String> {
     resp.text().await.map_err(|e| format!("QRZ.com: {e}"))
 }
 
-async fn login(cfg: &QrzConfig, agent: &str) -> Result<String, String> {
+async fn login(client: &reqwest::Client, cfg: &QrzConfig, agent: &str) -> Result<String, String> {
     if cfg.username.trim().is_empty() || cfg.password.is_empty() {
         return Err("Enter your QRZ.com username and password in Lookups".into());
     }
-    let xml = get(&[
+    let xml = get(client, &[
         ("username", cfg.username.trim()),
         ("password", cfg.password.as_str()),
         ("agent", agent),
@@ -110,51 +114,63 @@ async fn login(cfg: &QrzConfig, agent: &str) -> Result<String, String> {
 impl Qrz {
     /// Log in and report the subscription expiry, to check the settings.
     pub async fn test(&self, cfg: &QrzConfig, agent: &str) -> Result<String, String> {
-        let key = login(cfg, agent).await?;
-        let mut inner = self.inner.lock().await;
-        inner.session = Some((cfg.username.clone(), cfg.password.clone(), key.clone()));
-        inner.cache.clear();
-        let xml = get(&[("s", key.as_str())]).await?;
+        let key = login(&self.client, cfg, agent).await?;
+        {
+            let mut inner = self.inner.lock().unwrap();
+            inner.session = Some((cfg.username.clone(), cfg.password.clone(), key.clone()));
+            inner.cache.clear();
+        }
+        let xml = get(&self.client, &[("s", key.as_str())]).await?;
         Ok(match tag(&xml, "SubExp") {
             Some(exp) if exp != "non-subscriber" => format!("Logged in; XML subscription expires {exp}"),
             _ => "Logged in without an XML subscription: lookups give name and country only".into(),
         })
     }
 
+    /// The session key for `cfg`: the one held, or a new one from logging in.
+    async fn key(&self, cfg: &QrzConfig, agent: &str) -> Result<String, String> {
+        let held = match &self.inner.lock().unwrap().session {
+            Some((u, p, k)) if *u == cfg.username && *p == cfg.password => Some(k.clone()),
+            _ => None,
+        };
+        if let Some(k) = held {
+            return Ok(k);
+        }
+        let k = login(&self.client, cfg, agent).await?;
+        self.inner.lock().unwrap().session = Some((cfg.username.clone(), cfg.password.clone(), k.clone()));
+        Ok(k)
+    }
+
+    /// Log in ahead of the first lookup, and open the connection, so the first
+    /// call typed doesn't wait for both.
+    pub async fn warm_up(&self, cfg: &QrzConfig, agent: &str) {
+        if cfg.enabled {
+            let _ = self.key(cfg, agent).await;
+        }
+    }
+
     pub async fn lookup(&self, cfg: &QrzConfig, agent: &str, call: &str) -> Result<Option<QrzInfo>, String> {
         let call = call.trim().to_ascii_uppercase();
-        let mut inner = self.inner.lock().await;
-        if let Some(hit) = inner.cache.get(&call) {
+        if let Some(hit) = self.inner.lock().unwrap().cache.get(&call) {
             return Ok(hit.clone());
         }
         for attempt in 0..2 {
-            let current = match &inner.session {
-                Some((u, p, k)) if *u == cfg.username && *p == cfg.password && attempt == 0 => Some(k.clone()),
-                _ => None,
-            };
-            let key = match current {
-                Some(k) => k,
-                None => {
-                    let k = login(cfg, agent).await?;
-                    inner.session = Some((cfg.username.clone(), cfg.password.clone(), k.clone()));
-                    k
-                }
-            };
-            let xml = get(&[("s", key.as_str()), ("callsign", call.as_str())]).await?;
+            let key = self.key(cfg, agent).await?;
+            let xml = get(&self.client, &[("s", key.as_str()), ("callsign", call.as_str())]).await?;
             if let Some(info) = parse_info(&xml) {
-                inner.cache.insert(call, Some(info.clone()));
+                self.inner.lock().unwrap().cache.insert(call, Some(info.clone()));
                 return Ok(Some(info));
             }
             let err = tag(&xml, "Error").unwrap_or_default();
             if err.starts_with("Not found") {
-                inner.cache.insert(call, None);
+                self.inner.lock().unwrap().cache.insert(call, None);
                 return Ok(None);
             }
             // An expired or invalid session has no key; log in again once.
             if tag(&xml, "Key").is_some_and(|k| !k.is_empty()) || attempt == 1 {
                 return Err(format!("QRZ.com: {}", if err.is_empty() { "unexpected reply" } else { &err }));
             }
-            inner.session = None;
+            self.inner.lock().unwrap().session = None;
         }
         unreachable!()
     }

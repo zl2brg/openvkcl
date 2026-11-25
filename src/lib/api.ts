@@ -643,6 +643,25 @@ export function modeClass(mode: string): "PH" | "CW" | "DG" {
 }
 
 /** Signal report assumed when none is typed; "" for modes that exchange dB reports. */
+/**
+ * Why `rst` isn't a valid report in `mode`, or null if it is (blank uses the
+ * default). Phone is RS like 59, CW and RTTY are RST like 599, WSJT-X modes
+ * report dB like -10, and a contest's DG takes either RST or dB.
+ */
+export function reportProblem(mode: string, rst: string): string | null {
+  const r = rst.trim();
+  if (!r) return null;
+  const rs = /^[1-5][1-9]$/.test(r);
+  const rstOk = /^[1-5][1-9][1-9]$/.test(r);
+  const db = /^[+-]\d{1,2}$/.test(r);
+  if (mode === "DG") return rstOk || db ? null : "must be like 599, or a report in dB like -10";
+  if (["RY", "RTTY", "PSK31", "OLIVIA", "SSTV"].includes(mode) || modeClass(mode) === "CW") {
+    return rstOk ? null : "must be like 599: readability 1–5, then strength and tone 1–9";
+  }
+  if (modeClass(mode) === "PH") return rs ? null : "must be like 59: readability 1–5, then strength 1–9";
+  return db ? null : "must be a signal report in dB like -10 or +05";
+}
+
 export function defaultRst(mode: string): string {
   const c = modeClass(mode);
   if (c === "PH") return "59";

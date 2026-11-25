@@ -6,6 +6,7 @@
   import {
     api,
     defaultRst as rstFor,
+    reportProblem,
     errorText,
     dateTimeText,
     generalMode,
@@ -87,6 +88,12 @@
   let hasLoc = $derived(contest.exchange.includes("locator"));
   let general = $derived(contest.general);
   let defaultRst = $derived(rstFor(mode));
+  let sentProblem = $derived(reportProblem(mode, sentRst));
+  let rcvdProblem = $derived(reportProblem(mode, rcvdRst));
+  /** What's wrong with the reports, shown in the status line until fixed. */
+  let rstProblem = $derived(
+    sentProblem ? `RST sent ${sentProblem}` : rcvdProblem ? `RST rcvd ${rcvdProblem}` : "",
+  );
   // Band and mode follow the radio only while it reports a frequency.
   let rigDriven = $derived(followRig && rig.connected && rig.freq_hz != null);
 
@@ -248,6 +255,10 @@
 
   async function submit() {
     if (busy || !call.trim()) return;
+    if (rstProblem) {
+      (sentProblem ? rstSentInput : rstInput)?.focus();
+      return;
+    }
     if (manualTime && !parseDateTimeText(timeText)) {
       error = `Time must be YYYY-MM-DD HH:MM (${zoneLabel()}).`;
       return;
@@ -403,11 +414,29 @@
     </label>
     <label class="rst">
       RST sent
-      <input class="mono" bind:this={rstSentInput} bind:value={sentRst} placeholder={defaultRst} autocomplete="off" />
+      <input
+        class="mono"
+        class:invalid={!!sentProblem}
+        bind:this={rstSentInput}
+        bind:value={sentRst}
+        placeholder={defaultRst}
+        maxlength="3"
+        autocomplete="off"
+        title={sentProblem ? `RST sent ${sentProblem}` : ""}
+      />
     </label>
     <label class="rst">
       RST rcvd
-      <input class="mono" bind:this={rstInput} bind:value={rcvdRst} placeholder={defaultRst} autocomplete="off" />
+      <input
+        class="mono"
+        class:invalid={!!rcvdProblem}
+        bind:this={rstInput}
+        bind:value={rcvdRst}
+        placeholder={defaultRst}
+        maxlength="3"
+        autocomplete="off"
+        title={rcvdProblem ? `RST rcvd ${rcvdProblem}` : ""}
+      />
     </label>
     {#if !general}
       <label class="sent">
@@ -470,6 +499,8 @@
   <div class="status">
     {#if error}
       <span class="bad">{error}</span>
+    {:else if rstProblem}
+      <span class="bad">{rstProblem}</span>
     {:else if general && call.trim() && check}
       {@const dx = check.dx}
       {#if dx}
@@ -630,6 +661,10 @@
   }
   .loc input {
     width: 11ch;
+  }
+  .fields input.invalid {
+    border-color: var(--bad);
+    outline-color: var(--bad);
   }
   .rst input {
     width: 5.5ch;

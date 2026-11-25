@@ -592,6 +592,11 @@ pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<Logged> {
         if input.band.is_empty() || input.mode.is_empty() {
             return Err("Choose a band and mode".into());
         }
+        for (which, rst) in [("RST sent", &input.sent_rst), ("RST rcvd", &input.rcvd_rst)] {
+            if let Some(why) = modes::check_report(&input.mode, rst) {
+                return Err(format!("{which} {why}"));
+            }
+        }
         let mut q = draft_qso(log, &input);
         if log.def.general {
             q.details.dxcc = state.cty.lock().unwrap().lookup(&q.call).map(|c| c.dxcc);
@@ -645,6 +650,17 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Changed> {
         qso.rcvd_locator = geo::normalize_locator(&qso.rcvd_locator);
         qso.sent_locator = geo::normalize_locator(&qso.sent_locator);
         let stored = log.qsos.iter().find(|q| q.id == qso.id).ok_or("QSO not found")?;
+        // Only reports being changed are checked: imported ones may be anything.
+        for (which, new, old) in [
+            ("RST sent", &qso.sent_rst, &stored.sent_rst),
+            ("RST rcvd", &qso.rcvd_rst, &stored.rcvd_rst),
+        ] {
+            if new != old
+                && let Some(why) = modes::check_report(&qso.mode, new)
+            {
+                return Err(format!("{which} {why}"));
+            }
+        }
         let old_call = stored.call.clone();
         // The UI isn't sent these, so keep what's stored.
         qso.details.adif = stored.details.adif.clone();

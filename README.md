@@ -1,6 +1,6 @@
 # OpenVKCL
 
-<img width="1613" height="1014" alt="image" src="https://github.com/user-attachments/assets/c9d3fa3b-152a-418a-a02a-fdfb76908c23" />
+<img width="1410" height="986" alt="image" src="https://github.com/user-attachments/assets/ef4f4795-cfcf-49ec-9b64-44bb9637d1d1" />
 
 
 A cross-platform (Windows, Linux, macOS) contest logger for Australian and New

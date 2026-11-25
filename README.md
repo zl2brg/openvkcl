@@ -79,7 +79,7 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   (one character different) suggestions, as you type. Download the latest
   MASTER.SCP from **Lookups…** or import your own file. MASTER.SCP and the
   cty.csv country file also download in the background at startup when missing
-  or more than a week old.
+  or more than a week old, and the VK Shires list when missing.
 - QRZ.com lookups: name, location and grid for each callsign (needs a QRZ.com
   XML subscription for more than name and country).
 - Opening a log in a newer OpenVKCL adds any new columns without bumping the
@@ -138,21 +138,22 @@ your last contact with that station, so you only type it once.
 
 VK stations send RS(T) and their shire code (e.g. `59 BU4`); stations outside
 VK send RS(T) and their CQ zone (e.g. `59 32`). The codes come from the WIA's
-official list, which changes from time to time, so OpenVKCL reads the WIA's own
-file rather than keeping a copy:
-
-1. Download **Shire.db3** from the
-   [VK Shires page](https://www.wia.org.au/members/contests/wavks/) (the same
-   file VKCL uses).
-2. Put it in the app's `contests` folder (see
-   [Contest definitions](#contest-definitions)), replacing any older copy.
-3. Restart OpenVKCL to load the new list.
+official list (**Shire.db3**, the same file VKCL uses), which changes from time
+to time, so OpenVKCL reads the WIA's own file rather than keeping a copy. It
+downloads in the background the first time OpenVKCL starts, and is kept with
+MASTER.SCP and the country file. When the WIA publishes a new list, update it
+under **Lookups…**: **Download latest** fetches it from the
+[VK Shires page](https://www.wia.org.au/members/contests/wavks/), and
+**Import file…** takes a copy you've been sent. A file that isn't a shire list
+leaves the old one in place, and a new list is used straight away.
 
 With the list in place, the Shire/Zone box shows the shire's name (or "CQ zone
 32") as you type, and warns about a code that isn't on the list: the WIA
-deducts points for those, and they don't count as multipliers. The setup dialog
-checks your own shire code the same way. Without the file, any code is
-accepted and counted, and the entry line says the list is missing.
+deducts points for those, and they don't count as multipliers. Type part of a
+code or a place name (`bu`, `bunda`) to get a list of matching shires: arrows
+choose, Enter or Space takes one. The setup dialog checks your own shire code
+the same way. Without the file, any code is accepted and counted, and the entry
+line says the list is missing.
 
 Rovers that change shire during the contest aren't handled yet.
 

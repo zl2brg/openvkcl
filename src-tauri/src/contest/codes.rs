@@ -4,7 +4,7 @@
 use super::def::{ContestDef, norm_code};
 use rusqlite::{Connection, OpenFlags};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Codes and what they stand for, e.g. "BU4" -> "Bundaberg, Qld", from a file in the
 /// layout of the WIA's `Shire.db3` for VKCL.
@@ -46,33 +46,50 @@ pub fn read(path: &Path) -> Result<BTreeMap<String, String>, String> {
     Ok(codes)
 }
 
-/// Read the code list for a contest that has one, from the user's contests folder.
-pub fn attach(def: &mut ContestDef, user_dir: Option<&Path>) {
+/// Read the code list for a contest that has one, from the first of `dirs` that has it.
+pub fn attach(def: &mut ContestDef, dirs: &[&Path]) {
     let Some(list) = &def.number_list else { return };
-    let Some(dir) = user_dir else {
-        def.number_list_error = Some(format!("No contests folder to find {} in", list.file));
+    def.number_names.clear();
+    def.number_list_error = None;
+    let Some(path) = find(&list.file, dirs) else {
+        def.number_list_error = Some(format!("{} not found (download it under Lookups…)", list.file));
         return;
     };
-    let path = dir.join(&list.file);
-    if !path.exists() {
-        let from = if list.url.is_empty() { String::new() } else { format!(" from {}", list.url) };
-        def.number_list_error = Some(format!(
-            "{} not found. Download it{from} and put it in {}",
-            list.file,
-            dir.display()
-        ));
-        return;
-    }
     match read(&path) {
         Ok(codes) => def.number_names = codes,
         Err(e) => def.number_list_error = Some(e),
     }
 }
 
+/// Where `file` is: the first of `dirs` that has it.
+pub fn find(file: &str, dirs: &[&Path]) -> Option<PathBuf> {
+    dirs.iter().map(|d| d.join(file)).find(|p| p.is_file())
+}
+
+/// Check `bytes` are a code list, then save them as `dir/file`, replacing any
+/// list already there. A file that isn't a list leaves the old one alone.
+pub fn install(dir: &Path, file: &str, bytes: &[u8]) -> Result<usize, String> {
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let path = dir.join(file);
+    let new = dir.join(format!("{file}.new"));
+    std::fs::write(&new, bytes).map_err(|e| format!("{}: {e}", new.display()))?;
+    let count = match read(&new) {
+        Ok(codes) => codes.len(),
+        Err(_) => {
+            let _ = std::fs::remove_file(&new);
+            return Err(format!("That doesn't look like a {file} shire list"));
+        }
+    };
+    std::fs::rename(&new, &path).map_err(|e| {
+        let _ = std::fs::remove_file(&new);
+        format!("{}: {e}", path.display())
+    })?;
+    Ok(count)
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     /// An empty folder of our own under the system temp folder.
     pub fn test_dir(name: &str) -> PathBuf {
@@ -121,5 +138,31 @@ pub mod tests {
             .execute_batch("CREATE TABLE shireTbl(shire_stateName TEXT, shire_shireName TEXT, shire_shireCode TEXT);")
             .unwrap();
         assert!(read(&empty).unwrap_err().contains("no shires"));
+    }
+
+    #[test]
+    fn install_checks_before_replacing() {
+        let dir = test_dir("codes-install");
+        let src = dir.join("sample.db3");
+        write_sample(&src);
+        let lists = dir.join("lists");
+        let good = std::fs::read(&src).unwrap();
+        assert_eq!(install(&lists, "Shire.db3", &good), Ok(4));
+        assert!(install(&lists, "Shire.db3", b"<html>Not found</html>").is_err());
+        assert_eq!(read(&lists.join("Shire.db3")).unwrap().len(), 4, "the old list is kept");
+        assert!(!lists.join("Shire.db3.new").exists());
+    }
+
+    #[test]
+    fn finds_list_in_first_folder() {
+        let dir = test_dir("codes-find");
+        let (a, b) = (dir.join("a"), dir.join("b"));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        assert_eq!(find("Shire.db3", &[&a, &b]), None);
+        write_sample(&b.join("Shire.db3"));
+        assert_eq!(find("Shire.db3", &[&a, &b]), Some(b.join("Shire.db3")));
+        write_sample(&a.join("Shire.db3"));
+        assert_eq!(find("Shire.db3", &[&a, &b]), Some(a.join("Shire.db3")));
     }
 }

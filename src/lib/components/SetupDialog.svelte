@@ -1,7 +1,8 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
-  import { isLocator, numberMeaning, pad, type Bonus, type ContestDef, type LogSetup } from "$lib/api";
+  import CodeSuggest from "./CodeSuggest.svelte";
+  import { codeMatches, isLocator, numberMeaning, pad, type Bonus, type ContestDef, type LogSetup } from "$lib/api";
 
   let {
     contests,
@@ -34,6 +35,8 @@
   );
   let bandBonuses = $derived(contest?.scoring.bonus.filter((b) => b.per_band) ?? []);
   /** What the code you send stands for, in contests with a code list (e.g. your VK shire). */
+  let sentSuggest = $state<CodeSuggest>();
+  let sentFocused = $state(false);
   let sentMeaning = $derived(
     contest && setup.sent_number.trim() ? numberMeaning(contest, setup.sent_number) : null,
   );
@@ -328,14 +331,25 @@
       </div>
       {#if contest?.exchange.includes("number")}
         {@const list = contest.number_list}
-        <label>
+        <label class:coded={list}>
           {contest.number_label} (sent)
           {#if list}
             <input
               class="mono"
               bind:value={setup.sent_number}
               oninput={() => (setup.sent_number = setup.sent_number.toUpperCase())}
+              onkeydown={(e) => sentSuggest?.key(e)}
+              onfocus={() => (sentFocused = true)}
+              onblur={() => (sentFocused = false)}
               spellcheck="false"
+              placeholder="Code or place"
+            />
+            <CodeSuggest
+              bind:this={sentSuggest}
+              {contest}
+              typed={setup.sent_number}
+              open={sentFocused}
+              onpick={(code) => (setup.sent_number = code)}
             />
           {:else}
             <input class="mono" bind:value={setup.sent_number} inputmode="numeric" />
@@ -346,7 +360,7 @@
             <p class="hint warn">{contest.number_list_error}. Until then, codes can't be checked.</p>
           {:else if sentMeaning}
             <p class="hint words">{sentMeaning}</p>
-          {:else if sentMeaning === ""}
+          {:else if sentMeaning === "" && !codeMatches(contest, setup.sent_number).length}
             <p class="hint warn">Not a listed {list.item}{list.cq_zones ? " or a CQ zone" : ""}.</p>
           {:else}
             <p class="hint words">
@@ -501,6 +515,9 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 8px;
+  }
+  label.coded {
+    position: relative;
   }
   .hint {
     margin: 0;

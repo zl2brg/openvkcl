@@ -32,7 +32,14 @@ pub fn parse(name: &str, text: &str) -> Result<ContestDef, String> {
 
 /// Built-in contests, overridden or extended by `*.toml` files in `user_dir`.
 /// Returns the definitions sorted by name, plus any load errors.
+#[cfg(test)]
 pub fn load_all(user_dir: Option<&Path>) -> (Vec<ContestDef>, Vec<String>) {
+    load_with_lists(user_dir, user_dir)
+}
+
+/// [`load_all`], reading code lists (e.g. `Shire.db3`) from `list_dir`, or failing
+/// that from `user_dir`, where earlier versions kept them.
+pub fn load_with_lists(user_dir: Option<&Path>, list_dir: Option<&Path>) -> (Vec<ContestDef>, Vec<String>) {
     let mut defs = Vec::new();
     let mut errors = Vec::new();
     for (name, text) in BUILTIN {
@@ -60,11 +67,12 @@ pub fn load_all(user_dir: Option<&Path>) -> (Vec<ContestDef>, Vec<String>) {
             }
         }
     }
-    // Code lists (e.g. VK Shires) are read afresh each time, so a replaced file is
-    // picked up the next time the contests load (at startup). A missing list isn't a load error:
-    // the contest still works, and says what's missing when it's used.
+    // Code lists (e.g. VK Shires) are read afresh each time the contests load. A
+    // missing list isn't a load error: the contest still works, and says what's
+    // missing when it's used.
+    let dirs: Vec<&Path> = list_dir.into_iter().chain(user_dir).collect();
     for d in &mut defs {
-        codes::attach(d, user_dir);
+        codes::attach(d, &dirs);
     }
     defs.sort_by(|a, b| a.name.cmp(&b.name));
     (defs, errors)
@@ -595,7 +603,7 @@ mod tests {
         assert!(errors.is_empty(), "a missing list isn't a load error: {errors:?}");
         let d = defs.into_iter().find(|d| d.id == "wia-vkshires").unwrap();
         let why = d.number_list_error.clone().unwrap();
-        assert!(why.contains("Shire.db3 not found") && why.contains("wia.org.au"), "{why}");
+        assert!(why.contains("Shire.db3 not found") && why.contains("Lookups"), "{why}");
         // Without the list, codes can't be checked: any code counts, nothing is warned.
         let start = Utc.with_ymd_and_hms(2026, 6, 6, 0, 0, 0).unwrap();
         let s = setup("wia-vkshires", start);

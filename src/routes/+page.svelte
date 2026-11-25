@@ -150,6 +150,13 @@
     };
   });
 
+  /** Pick up contests' code lists after one is downloaded or imported. */
+  async function reloadContests() {
+    const list = await api.listContests();
+    contests = list.contests;
+    contestErrors = list.errors;
+  }
+
   /** Lookup files older than this are downloaded again at startup. */
   const LOOKUP_MAX_AGE_MS = 7 * 24 * 3_600_000;
 
@@ -175,7 +182,19 @@
       update("country file", api.ctyStatus, api.ctyDownload),
       update("MASTER.SCP", api.scpStatus, api.scpDownload),
     ]);
-    if (done.includes("country file")) {
+    // Code lists (e.g. the VK Shires list) change about once a year: only fetch missing ones.
+    const lists = await api.codeLists().catch(() => []);
+    for (const l of lists.filter((l) => !l.count && l.url)) {
+      try {
+        await api.codeListDownload(l.file);
+        done.push(`${l.contests.join(", ")} list`);
+      } catch {
+        failed.push(`${l.contests.join(", ")} list`);
+      }
+    }
+    const newList = done.some((d) => d.endsWith(" list"));
+    if (newList) await reloadContests();
+    if (done.includes("country file") || newList) {
       const v = await api.getLog().catch(() => null);
       if (v) setView(v);
     }
@@ -477,7 +496,7 @@
         >Voice keyer…</button
       >
     {/if}
-    <button onclick={() => (lookupDialog = true)} title="Super Check Partial and QRZ.com">Lookups…</button>
+    <button onclick={() => (lookupDialog = true)} title="Super Check Partial, country file, contest lists, QRZ.com and DX cluster">Lookups…</button>
     <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
       <span class="notice" class:error={noticeIsError}>{notice}</span>
@@ -598,6 +617,11 @@
     stationCall={settings.station.callsign}
     onsave={saveLookups}
     onctychange={async () => {
+      const v = await api.getLog();
+      if (v) setView(v);
+    }}
+    oncodeschange={async () => {
+      await reloadContests();
       const v = await api.getLog();
       if (v) setView(v);
     }}

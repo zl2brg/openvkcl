@@ -96,6 +96,8 @@ pub struct AppState {
     pub contests: Mutex<Vec<ContestDef>>,
     pub contest_errors: Mutex<Vec<String>>,
     pub contest_dir: PathBuf,
+    /// Where lookup files live: MASTER.SCP, cty.csv and contest code lists such as Shire.db3.
+    pub config_dir: PathBuf,
     pub settings: Mutex<Settings>,
     pub settings_path: PathBuf,
     pub rig: Arc<Rig>,
@@ -113,7 +115,7 @@ pub struct AppState {
 impl AppState {
     pub fn new(config_dir: &Path) -> Self {
         let contest_dir = config_dir.join("contests");
-        let (defs, errors) = contest::load_all(Some(&contest_dir));
+        let (defs, errors) = contest::load_with_lists(Some(&contest_dir), Some(config_dir));
         let settings_path = config_dir.join("settings.json");
         let scp_path = config_dir.join("MASTER.SCP");
         let cty_path = config_dir.join("cty.csv");
@@ -122,6 +124,7 @@ impl AppState {
             contests: Mutex::new(defs),
             contest_errors: Mutex::new(errors),
             contest_dir,
+            config_dir: config_dir.to_path_buf(),
             settings: Mutex::new(Settings::load(&settings_path)),
             settings_path,
             rig: Arc::new(Rig::default()),
@@ -134,6 +137,10 @@ impl AppState {
             qrz: Qrz::default(),
             cluster: Cluster::default(),
         }
+    }
+
+    fn load_contests(&self) -> (Vec<ContestDef>, Vec<String>) {
+        contest::load_with_lists(Some(&self.contest_dir), Some(&self.config_dir))
     }
 
     fn find_contest(&self, id: &str) -> CmdResult<ContestDef> {
@@ -206,6 +213,23 @@ pub struct ScpStatus {
     path: String,
     /// When MASTER.SCP was last downloaded or imported.
     updated: Option<chrono::DateTime<Utc>>,
+}
+
+/// A contest's list of exchange codes, e.g. the WIA's Shire.db3.
+#[derive(Serialize)]
+pub struct CodeListStatus {
+    file: String,
+    /// What each code is, e.g. "shire".
+    item: String,
+    url: String,
+    /// Codes in the list; 0 when there is none or it can't be read.
+    count: usize,
+    /// Where the list is, or will be saved.
+    path: String,
+    updated: Option<DateTime<Utc>>,
+    error: Option<String>,
+    /// The contests that use it.
+    contests: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -455,7 +479,7 @@ fn with_log<T>(state: &AppState, f: impl FnOnce(&mut OpenLog) -> CmdResult<T>) -
 
 #[tauri::command]
 pub fn list_contests(state: State<AppState>) -> ContestList {
-    let (defs, errors) = contest::load_all(Some(&state.contest_dir));
+    let (defs, errors) = state.load_contests();
     *state.contests.lock().unwrap() = defs.clone();
     *state.contest_errors.lock().unwrap() = errors.clone();
     ContestList {
@@ -1095,6 +1119,87 @@ pub fn cluster_status(state: State<AppState>) -> ClusterStatus {
 #[tauri::command]
 pub fn cluster_spots(state: State<AppState>) -> Vec<Spot> {
     state.cluster.spots()
+}
+
+fn code_lists_of(state: &AppState) -> Vec<CodeListStatus> {
+    let contests = state.contests.lock().unwrap();
+    let mut lists: Vec<CodeListStatus> = Vec::new();
+    for d in contests.iter() {
+        let Some(list) = &d.number_list else { continue };
+        if let Some(seen) = lists.iter_mut().find(|l| l.file == list.file) {
+            seen.contests.push(d.name.clone());
+            continue;
+        }
+        let path = contest::codes::find(&list.file, &[&state.config_dir, &state.contest_dir])
+            .unwrap_or_else(|| state.config_dir.join(&list.file));
+        lists.push(CodeListStatus {
+            file: list.file.clone(),
+            item: list.item.clone(),
+            url: list.url.clone(),
+            count: d.number_names.len(),
+            path: path.display().to_string(),
+            updated: std::fs::metadata(&path)
+                .and_then(|m| m.modified())
+                .ok()
+                .map(DateTime::<Utc>::from),
+            error: d.number_list_error.clone(),
+            contests: vec![d.name.clone()],
+        });
+    }
+    lists
+}
+
+/// Check `bytes` are the code list `file`, save it with the other lookup files,
+/// and start using it in the contests and the open log.
+fn install_code_list(state: &AppState, file: &str, bytes: &[u8]) -> CmdResult<Vec<CodeListStatus>> {
+    contest::codes::install(&state.config_dir, file, bytes)?;
+    let (defs, errors) = state.load_contests();
+    if let Some(log) = state.log.lock().unwrap().as_mut()
+        && let Some(fresh) = defs.iter().find(|d| d.id == log.def.id)
+    {
+        log.def.number_names = fresh.number_names.clone();
+        log.def.number_list_error = fresh.number_list_error.clone();
+        // Codes now on (or off) the list change what counts as a multiplier.
+        log.changed();
+    }
+    *state.contests.lock().unwrap() = defs;
+    *state.contest_errors.lock().unwrap() = errors;
+    Ok(code_lists_of(state))
+}
+
+/// Contests' code lists, such as the VK Shires list, and whether each is there.
+#[tauri::command]
+pub fn code_lists(state: State<AppState>) -> Vec<CodeListStatus> {
+    code_lists_of(&state)
+}
+
+/// Download the code list `file` from where its contest says it's published.
+#[tauri::command]
+pub async fn code_list_download(state: State<'_, AppState>, file: String) -> CmdResult<Vec<CodeListStatus>> {
+    let url = code_lists_of(&state)
+        .into_iter()
+        .find(|l| l.file == file && !l.url.is_empty())
+        .map(|l| l.url)
+        .ok_or_else(|| format!("No download address for {file}"))?;
+    let fail = |e: reqwest::Error| format!("Downloading {file} failed: {e}");
+    let bytes = reqwest::Client::new()
+        .get(&url)
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await
+        .and_then(|r| r.error_for_status())
+        .map_err(fail)?
+        .bytes()
+        .await
+        .map_err(fail)?;
+    install_code_list(&state, &file, &bytes)
+}
+
+/// Use the file at `path` as the code list `file`.
+#[tauri::command]
+pub fn code_list_import(state: State<AppState>, file: String, path: String) -> CmdResult<Vec<CodeListStatus>> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
+    install_code_list(&state, &file, &bytes)
 }
 
 #[cfg(test)]

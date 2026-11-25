@@ -84,6 +84,33 @@ export function numberMeaning(contest: ContestDef, code: string): string | null 
   return Object.keys(contest.number_names).length ? "" : null;
 }
 
+/**
+ * Listed codes whose code or name matches what's been typed, best first:
+ * codes starting with it, then names starting with it, then names with a later
+ * word starting with it, then names containing it. "BU" finds BU4 Bundaberg; "bunda" and "berg" find it too.
+ * Nothing once a listed code has been typed in full.
+ */
+export function codeMatches(contest: ContestDef, typed: string, limit = 8): [string, string][] {
+  const q = typed.trim().toUpperCase();
+  if (!q || contest.number_names[q]) return [];
+  const ranked: [number, string, string][] = [];
+  for (const [code, name] of Object.entries(contest.number_names)) {
+    const n = name.toUpperCase();
+    const rank = code.startsWith(q)
+      ? 0
+      : n.startsWith(q)
+        ? 1
+        : n.includes(" " + q)
+          ? 2
+          : n.includes(q)
+            ? 3
+            : -1;
+    if (rank >= 0) ranked.push([rank, code, name]);
+  }
+  ranked.sort((a, b) => a[0] - b[0] || a[2].localeCompare(b[2]));
+  return ranked.slice(0, limit).map(([, code, name]) => [code, name]);
+}
+
 export interface Bonus {
   category: string;
   value: string;
@@ -310,6 +337,18 @@ export interface CheckResult {
   previous: QsoRow[];
 }
 
+/** A contest's list of exchange codes, e.g. the WIA's Shire.db3. */
+export interface CodeListStatus {
+  file: string;
+  item: string;
+  url: string;
+  count: number;
+  path: string;
+  updated: string | null;
+  error: string | null;
+  contests: string[];
+}
+
 export interface CtyStatus {
   count: number;
   path: string;
@@ -521,6 +560,9 @@ export const api = {
   ctyStatus: () => invoke<CtyStatus>("cty_status"),
   ctyDownload: () => invoke<CtyStatus>("cty_download"),
   ctyImport: (path: string) => invoke<CtyStatus>("cty_import", { path }),
+  codeLists: () => invoke<CodeListStatus[]>("code_lists"),
+  codeListDownload: (file: string) => invoke<CodeListStatus[]>("code_list_download", { file }),
+  codeListImport: (file: string, path: string) => invoke<CodeListStatus[]>("code_list_import", { file, path }),
   exportScoreSheet: (path: string) =>
     invoke<void>("export_score_sheet", { path }),
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),

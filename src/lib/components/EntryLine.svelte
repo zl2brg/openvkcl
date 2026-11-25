@@ -3,6 +3,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import BandGrid from "./BandGrid.svelte";
   import KeyerBar from "./KeyerBar.svelte";
+  import CodeSuggest from "./CodeSuggest.svelte";
   import {
     api,
     defaultRst as rstFor,
@@ -166,6 +167,8 @@
 
   /** The number field takes codes from an official list (e.g. VK Shires "BU4"), not just digits. */
   let coded = $derived(!!contest.number_list);
+  let exchSuggest = $state<CodeSuggest>();
+  let exchFocused = $state(false);
   /** What the received code stands for, e.g. "Bundaberg, Qld" or "CQ zone 32". */
   let exchMeaning = $derived.by(() => {
     const code = rcvdExch.trim() || check?.known_exch || "";
@@ -503,18 +506,30 @@
       </label>
     {/if}
     {#if hasExch}
-      <label class="nr">
+      <label class="nr" class:coded>
         {contest.number_label}
         <input
           class="mono"
           bind:this={exchInput}
           bind:value={rcvdExch}
           oninput={() => coded && (rcvdExch = rcvdExch.toUpperCase())}
+          onkeydown={(e) => exchSuggest?.key(e)}
+          onfocus={() => (exchFocused = true)}
+          onblur={() => (exchFocused = false)}
           placeholder={check?.known_exch ?? ""}
           inputmode={coded ? "text" : "numeric"}
           autocomplete="off"
           spellcheck="false"
         />
+        {#if coded}
+          <CodeSuggest
+            bind:this={exchSuggest}
+            {contest}
+            typed={rcvdExch}
+            open={exchFocused}
+            onpick={(code) => (rcvdExch = code)}
+          />
+        {/if}
       </label>
     {/if}
     {#if hasLoc}
@@ -703,6 +718,9 @@
   }
   .sent input {
     color: var(--muted);
+  }
+  label.coded {
+    position: relative;
   }
   .nr input {
     width: 6ch;

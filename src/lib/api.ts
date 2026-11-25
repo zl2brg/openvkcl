@@ -188,6 +188,21 @@ function fillView(v: LogView): LogView {
 /** Logging a contact: the new row to add at the end, or the whole log. */
 export type Logged = { kind: "row"; row: QsoRow } | { kind: "view"; view: LogView };
 
+/** Editing or deleting a contact: the rows that changed (and any removed), or the whole log. */
+export type Changed = { kind: "rows"; rows: QsoRow[]; removed: number | null } | { kind: "view"; view: LogView };
+
+function fillChanged(c: Changed): Changed {
+  return c.kind === "rows" ? { ...c, rows: c.rows.map(fillRow) } : { kind: "view", view: fillView(c.view) };
+}
+
+/** The log with `change` applied: changed rows replaced in place, a deleted one removed. */
+export function applyChange(view: LogView, change: Changed): LogView {
+  if (change.kind === "view") return change.view;
+  const changed = new Map(change.rows.map((r) => [r.id, r]));
+  const qsos = view.qsos.filter((q) => q.id !== change.removed).map((q) => changed.get(q.id) ?? q);
+  return { ...view, qsos };
+}
+
 export interface GroupScore {
   name: string;
   qsos: number;
@@ -450,8 +465,8 @@ export const api = {
     invoke<Logged>("log_qso", { input }).then(
       (l): Logged => (l.kind === "row" ? { kind: "row", row: fillRow(l.row) } : { kind: "view", view: fillView(l.view) }),
     ),
-  updateQso: (qso: Qso) => invoke<LogView>("update_qso", { qso }).then(fillView),
-  deleteQso: (id: number) => invoke<LogView>("delete_qso", { id }).then(fillView),
+  updateQso: (qso: Qso) => invoke<Changed>("update_qso", { qso }).then(fillChanged),
+  deleteQso: (id: number) => invoke<Changed>("delete_qso", { id }).then(fillChanged),
   cabrilloText: () => invoke<string>("cabrillo_text"),
   exportCabrillo: (path: string) => invoke<void>("export_cabrillo", { path }),
   /** Returns how many contacts were exported. */

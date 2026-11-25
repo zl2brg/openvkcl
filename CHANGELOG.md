@@ -5,6 +5,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Changed
+
+- Faster with long general logs. Editing or deleting a contact sends only the
+  rows that changed rather than the whole log (about 6 MB for a 20,000-contact
+  logbook), and the log table redraws only those rows. Contacts imported
+  before the country file was downloaded get their DXCC numbers stored the
+  next time the log opens, so checking a call no longer looks up every
+  contact's country again. Contest logs are scored once per keystroke instead
+  of twice.
+
 ## [0.6.0] - 2026-11-23
 
 ### Fixed

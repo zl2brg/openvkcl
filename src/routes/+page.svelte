@@ -4,6 +4,7 @@
   import { open, save } from "@tauri-apps/plugin-dialog";
   import {
     api,
+    applyChange,
     emptyStation,
     errorText,
     formatFreq,
@@ -259,7 +260,8 @@
 
   async function saveQso(qso: Qso) {
     try {
-      setView(await api.updateQso(qso));
+      const change = await api.updateQso(qso);
+      if (view) setView(applyChange(view, change));
       editRow = null;
       refocus();
     } catch (e) {
@@ -269,7 +271,8 @@
 
   async function deleteQso(id: number) {
     try {
-      setView(await api.deleteQso(id));
+      const change = await api.deleteQso(id);
+      if (view) setView(applyChange(view, change));
       editRow = null;
       refocus();
     } catch (e) {

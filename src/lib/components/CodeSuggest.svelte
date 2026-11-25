@@ -31,10 +31,10 @@
   });
 
   /**
-   * Handles a key in the field: arrows move through the list, Enter or Space
-   * takes the highlighted code, Esc closes the list. Returns true when the key
-   * was used, so Enter doesn't also log the contact. Space still moves on to
-   * the next field after taking the code.
+   * Handles a key in the field: arrows move through the list, Enter, Space or
+   * Tab takes the highlighted code, Esc closes the list. Returns true when the
+   * key was used, so Enter doesn't also log the contact. Space and Tab still
+   * move on to the next field after taking the code.
    */
   export function key(e: KeyboardEvent): boolean {
     if (!shown) return false;
@@ -42,7 +42,7 @@
       active = (active + (e.key === "ArrowDown" ? 1 : -1) + matches.length) % matches.length;
     } else if (e.key === "Enter") {
       onpick(matches[active][0]);
-    } else if (e.key === " ") {
+    } else if (e.key === " " || (e.key === "Tab" && !e.shiftKey)) {
       onpick(matches[active][0]);
       e.preventDefault();
       return false;

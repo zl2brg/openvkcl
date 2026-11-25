@@ -151,9 +151,9 @@ With the list in place, the Shire/Zone box shows the shire's name (or "CQ zone
 32") as you type, and warns about a code that isn't on the list: the WIA
 deducts points for those, and they don't count as multipliers. Type part of a
 code or a place name (`bu`, `bunda`) to get a list of matching shires: arrows
-choose, Enter or Space takes one. The setup dialog checks your own shire code
-the same way. Without the file, any code is accepted and counted, and the entry
-line says the list is missing.
+choose, Enter, Space or Tab takes one. The setup dialog checks your own shire
+code the same way. Without the file, any code is accepted and counted, and the
+entry line says the list is missing.
 
 Rovers that change shire during the contest aren't handled yet.
 

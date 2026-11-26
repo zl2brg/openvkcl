@@ -34,6 +34,7 @@
   import LogTable from "$lib/components/LogTable.svelte";
   import ScorePanel from "$lib/components/ScorePanel.svelte";
   import SetupDialog from "$lib/components/SetupDialog.svelte";
+  import MoveDialog from "$lib/components/MoveDialog.svelte";
   import RigDialog from "$lib/components/RigDialog.svelte";
   import KeyerDialog from "$lib/components/KeyerDialog.svelte";
   import EditQsoDialog from "$lib/components/EditQsoDialog.svelte";
@@ -65,6 +66,7 @@
   let check = $state<CheckResult | null>(null);
 
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
+  let moveDialog = $state(false);
   let rigDialog = $state(false);
   let keyerDialog = $state(false);
   /** The voice keyer is optional and off until ticked. Remembered on this computer. */
@@ -266,6 +268,19 @@
     try {
       setView(await api.updateSetup(setup));
       setupDialog = null;
+      refocus();
+    } catch (e) {
+      say(errorText(e), true);
+    }
+  }
+
+  /** A rover has moved: send the new code (e.g. shire) from the next contact on. */
+  async function moveTo(code: string) {
+    if (!view) return;
+    try {
+      setView(await api.updateSetup({ ...view.setup, sent_number: code }));
+      moveDialog = false;
+      say(`Now sending ${code}`);
       refocus();
     } catch (e) {
       say(errorText(e), true);
@@ -518,6 +533,7 @@
           keyer={showKeyer ? (settings?.keyer ?? null) : null}
           onkeyerchange={saveKeyer}
           onlog={logQso}
+          onmove={() => (moveDialog = true)}
         />
         <div class="table">
           <LogTable
@@ -561,6 +577,18 @@
     </section>
   {/if}
 </div>
+
+{#if moveDialog && view}
+  <MoveDialog
+    contest={view.contest}
+    current={view.setup.sent_number}
+    onsave={moveTo}
+    onclose={() => {
+      moveDialog = false;
+      refocus();
+    }}
+  />
+{/if}
 
 {#if setupDialog}
   <SetupDialog

@@ -10,8 +10,10 @@
 # checked against the WIA's Shire.db3, which goes in the app's contests folder
 # (see the README), so it can be replaced whenever the WIA updates it.
 #
-# Not handled: rovers changing shire during the contest (a rover becomes a new
-# contact, and a new multiplier, in each shire it activates).
+# Rovers (CATEGORY-STATION ROVER) must activate at least two shires. A rover in a
+# new shire is a new contact for the stations working it, and counts the same
+# multipliers again there. It must wait 5 minutes after moving before its next
+# contact.
 id = "wia-vkshires"
 name = "WIA VK Shires"
 cabrillo_name = "WIA-VK SHIRES"
@@ -74,10 +76,15 @@ label = "Assisted"
 options = ["NON-ASSISTED", "ASSISTED"]
 default = "NON-ASSISTED"
 
+[rover]
+category = "CATEGORY-STATION"
+value = "ROVER"
+move_minutes = 5
+
 [[categories]]
 key = "CATEGORY-STATION"
-label = "Station"
-options = ["FIXED", "PORTABLE"]
+label = "Station (rover: at least two shires)"
+options = ["FIXED", "PORTABLE", "ROVER"]
 default = "FIXED"
 
 [[categories]]

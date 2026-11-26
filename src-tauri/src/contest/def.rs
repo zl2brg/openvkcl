@@ -69,6 +69,9 @@ pub struct ContestDef {
     pub score_groups: Vec<ScoreGroup>,
     #[serde(default)]
     pub categories: Vec<CategoryField>,
+    /// Stations that move between `number` areas during the contest, e.g. VK Shires rovers.
+    #[serde(default)]
+    pub rover: Option<Rover>,
 }
 
 fn default_number_label() -> String {
@@ -92,6 +95,19 @@ pub struct NumberList {
     /// Where to download the current list.
     #[serde(default)]
     pub url: String,
+}
+
+/// Rovers send the `number` of wherever they are now, so it can change from one
+/// contact to the next. A rover in a new area is a new contact for everyone, and
+/// counts its multipliers again there.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Rover {
+    /// The setup category that makes the log a rover's, e.g. CATEGORY-STATION = ROVER.
+    pub category: String,
+    pub value: String,
+    /// Minutes a rover must wait after moving before its next contact.
+    #[serde(default)]
+    pub move_minutes: i64,
 }
 
 fn default_list_item() -> String {
@@ -416,6 +432,13 @@ impl ContestDef {
         Some(self.number_meaning(code).is_some())
     }
 
+    /// Whether this log is a rover's.
+    pub fn is_rover(&self, setup: &crate::model::LogSetup) -> bool {
+        self.rover
+            .as_ref()
+            .is_some_and(|r| setup.categories.get(&r.category) == Some(&r.value))
+    }
+
     pub fn block_of(&self, start: DateTime<Utc>, t: DateTime<Utc>) -> i64 {
         match &self.blocks {
             Some(b) if b.minutes > 0 => (t - start).num_minutes().div_euclid(b.minutes).max(0),
@@ -464,6 +487,15 @@ impl ContestDef {
         }
         if self.number_list.is_some() && !self.has_field(ExchField::Number) {
             return Err(format!("{}: number_list needs a number in the exchange", self.id));
+        }
+        if let Some(r) = &self.rover {
+            if !self.has_field(ExchField::Number) {
+                return Err(format!("{}: rover needs a number in the exchange", self.id));
+            }
+            let listed = self.categories.iter().any(|c| c.key == r.category && c.options.contains(&r.value));
+            if !listed {
+                return Err(format!("{}: rover needs {} = {} among the categories", self.id, r.category, r.value));
+            }
         }
         for s in &self.sessions {
             if s.start_minute < 0 || s.minutes <= 0 || s.start_minute + s.minutes > self.duration_minutes {

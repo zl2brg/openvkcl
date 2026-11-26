@@ -281,7 +281,7 @@ fn basic_points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64
     }
 }
 
-fn dupe_key(def: &ContestDef, q: &Qso, block: i64) -> String {
+fn dupe_key(def: &ContestDef, setup: &LogSetup, q: &Qso, block: i64) -> String {
     let mut key = callsign::normalize(&q.call);
     for dim in &def.rework.per {
         key.push('|');
@@ -300,6 +300,14 @@ fn dupe_key(def: &ContestDef, q: &Qso, block: i64) -> String {
             geo::square(&q.sent_locator),
             geo::square(&q.rcvd_locator)
         ));
+    }
+    // A rover in a new area is a new contact: the other station may be one, and
+    // so may this log.
+    if def.rover.is_some() {
+        key.push_str(&format!("|{}", norm_number(&q.rcvd_exch)));
+        if def.is_rover(setup) {
+            key.push_str(&format!("|{}", norm_number(&q.sent_exch)));
+        }
     }
     key
 }
@@ -343,7 +351,7 @@ fn mult_value(def: &ContestDef, setup: &LogSetup, q: &Qso, prefix: &str) -> Opti
     (!excluded).then_some(value)
 }
 
-fn mult_key(def: &ContestDef, q: &Qso, value: &str, block: i64) -> Option<String> {
+fn mult_key(def: &ContestDef, setup: &LogSetup, q: &Qso, value: &str, block: i64) -> Option<String> {
     let m = def.multiplier.as_ref()?;
     let mut key = value.to_string();
     for dim in &m.per {
@@ -353,6 +361,10 @@ fn mult_key(def: &ContestDef, q: &Qso, value: &str, block: i64) -> Option<String
             Dim::Mode => key.push_str(&def.mode_group(&q.mode)),
             Dim::Block => key.push_str(&block.to_string()),
         }
+    }
+    // A rover counts each multiplier again from each area it operates in.
+    if def.is_rover(setup) {
+        key.push_str(&format!("|from {}", norm_number(&q.sent_exch)));
     }
     Some(key)
 }
@@ -374,6 +386,9 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
     let mut invalid_count = 0;
     let mut by_band: BTreeMap<String, u32> = BTreeMap::new();
     let bonuses = applied_bonuses(def, setup);
+    let rover_wait = def.rover.as_ref().filter(|_| def.is_rover(setup)).map(|r| r.move_minutes);
+    // The rover's last contact: when, and from which area.
+    let mut last_from: Option<(DateTime<Utc>, String)> = None;
 
     for i in order {
         let q = &qsos[i];
@@ -391,9 +406,23 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
             continue;
         }
         r.warning = exchange_warning(def, setup, q);
+        if let Some(wait) = rover_wait {
+            let from = norm_number(&q.sent_exch);
+            if let Some((t, prev)) = &last_from
+                && *prev != from
+                && q.time < *t + Duration::minutes(wait)
+            {
+                let moved = format!("ess than {wait} minutes after the last contact from {prev}");
+                r.warning = Some(match r.warning.take() {
+                    Some(w) => format!("{w}, l{moved}"),
+                    None => format!("L{moved}"),
+                });
+            }
+            last_from = Some((q.time, from));
+        }
 
         if def.rework.kind != ReworkKind::Off {
-            let key = dupe_key(def, q, block);
+            let key = dupe_key(def, setup, q, block);
             match def.rework.kind {
                 ReworkKind::Never => r.dupe = last_worked.contains_key(&key),
                 ReworkKind::Block => {
@@ -442,7 +471,7 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
         let block_tally = tally.blocks.entry(block).or_default();
         block_tally.0 += r.points;
         if let Some(value) = mult_value(def, setup, q, &prefix)
-            && let Some(mk) = mult_key(def, q, &value, block)
+            && let Some(mk) = mult_key(def, setup, q, &value, block)
         {
             block_tally.1.insert(mk.clone());
             r.new_mult = tally.mults.insert(mk);

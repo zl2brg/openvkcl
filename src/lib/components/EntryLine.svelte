@@ -12,6 +12,7 @@
     dateTimeText,
     generalMode,
     isFutureQsoTime,
+    isRover,
     modeClass,
     numberMeaning,
     parseDateTimeText,
@@ -38,6 +39,7 @@
     keyer,
     onkeyerchange,
     onlog,
+    onmove,
     check = $bindable(null),
   }: {
     contest: ContestDef;
@@ -52,6 +54,8 @@
     keyer: KeyerConfig | null;
     onkeyerchange: (config: KeyerConfig) => void;
     onlog: (input: QsoInput) => Promise<void>;
+    /** A rover has moved: choose the code it sends from now on. */
+    onmove: () => void;
     check?: CheckResult | null;
   } = $props();
 
@@ -488,6 +492,16 @@
           style:width="{Math.max(8, sentText.length + 2)}ch"
         />
       </label>
+      {#if isRover(contest, setup)}
+        <button
+          class="move"
+          tabindex="-1"
+          onclick={onmove}
+          title="You've moved: choose the {contest.number_list?.item ?? contest.number_label} you send from now on"
+        >
+          Moved…
+        </button>
+      {/if}
     {/if}
     {#if hasNr}
       <label class="nr">

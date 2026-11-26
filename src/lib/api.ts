@@ -54,6 +54,8 @@ export interface ContestDef {
   };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
+  /** Stations that move between areas (e.g. VK Shires rovers), chosen by a category. */
+  rover: { category: string; value: string; move_minutes: number } | null;
   scoring: {
     bonus: Bonus[];
     /** Only "fixed" points have `local_time`: a points factor between two local times (e.g. RD's 01:00-06:00 x3). */
@@ -68,6 +70,12 @@ export interface NumberList {
   /** CQ zones 1-40 are valid too. */
   cq_zones: boolean;
   url: string;
+}
+
+/** Whether a log is a rover's, so the code it sends can change as it moves. */
+export function isRover(contest: ContestDef, setup: LogSetup): boolean {
+  const r = contest.rover;
+  return !!r && setup.categories[r.category] === r.value;
 }
 
 /**

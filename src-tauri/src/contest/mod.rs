@@ -584,6 +584,53 @@ mod tests {
     }
 
     #[test]
+    fn vk_shires_rovers() {
+        let d = shires_with_list("shires-rovers");
+        let start = Utc.with_ymd_and_hms(2026, 6, 6, 0, 0, 0).unwrap();
+        let m = |min: i64| start + Duration::minutes(min);
+        let from = |mut q: Qso, shire: &str| {
+            q.sent_exch = shire.into();
+            q
+        };
+
+        // Working a rover: each new shire it's in is a new contact.
+        let s = setup("wia-vkshires", start);
+        let e = evaluate(&d, &s, &[
+            shire_qso(1, m(10), "VK4ROV", "40m", "PH", "BU4"),
+            shire_qso(2, m(40), "VK4ROV", "40m", "PH", "BN4"),
+            shire_qso(3, m(50), "VK4ROV", "40m", "PH", "BN4"),
+        ]);
+        assert!(!e.results[1].dupe && e.results[2].dupe);
+
+        // As a rover: the same shire counts again from each shire you're in, and
+        // the same station can be worked again once you've moved.
+        let mut s = setup("wia-vkshires", start);
+        s.categories.insert("CATEGORY-STATION".into(), "ROVER".into());
+        assert!(d.is_rover(&s));
+        let e = evaluate(&d, &s, &[
+            from(shire_qso(1, m(10), "VK5XYZ", "40m", "PH", "AD5"), "BU4"),
+            from(shire_qso(2, m(12), "VK5XYZ", "40m", "PH", "AD5"), "BU4"),
+            // Moved, but only 3 minutes after the last contact.
+            from(shire_qso(3, m(15), "VK5XYZ", "40m", "PH", "AD5"), "BN4"),
+            from(shire_qso(4, m(30), "VK2ABC", "40m", "PH", "XX0"), "BN4"),
+        ]);
+        let r = &e.results;
+        assert!(r[0].new_mult && r[1].dupe);
+        assert!(!r[2].dupe && r[2].new_mult);
+        assert_eq!(r[2].warning.as_deref(), Some("Less than 5 minutes after the last contact from BU4"));
+        assert!(r[3].warning.is_none());
+        assert_eq!(e.score.groups[0].mults, 3);
+
+        // A fixed station's multipliers count once, whatever it sent.
+        let s = setup("wia-vkshires", start);
+        let e = evaluate(&d, &s, &[
+            from(shire_qso(1, m(10), "VK5XYZ", "40m", "PH", "AD5"), "BU4"),
+            from(shire_qso(2, m(15), "VK5ABC", "40m", "PH", "AD5"), "BN4"),
+        ]);
+        assert!(!e.results[1].new_mult && e.results[1].warning.is_none());
+    }
+
+    #[test]
     fn vk_shires_meanings() {
         let d = shires_with_list("shires-meanings");
         assert_eq!(d.number_meaning(" bu4 ").as_deref(), Some("Bundaberg, Qld"));

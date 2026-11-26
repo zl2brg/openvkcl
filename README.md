@@ -155,7 +155,13 @@ choose, Enter, Space or Tab takes one. The setup dialog checks your own shire
 code the same way. Without the file, any code is accepted and counted, and the
 entry line says the list is missing.
 
-Rovers that change shire during the contest aren't handled yet.
+Rovers choose **ROVER** as the station category. When you move, click
+**Moved…** next to Sent on the entry line and choose the new shire; contacts from
+then on send it. Each shire you operate from counts its multipliers again, and
+stations can work you again once you're in a new shire (likewise, a rover you
+work from a new shire isn't a dupe). A contact less than 5 minutes after the last
+one from a different shire is flagged, as the rules require that gap. The rules
+also require at least two shires.
 
 ### Radio control
 

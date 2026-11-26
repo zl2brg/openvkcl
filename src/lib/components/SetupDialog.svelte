@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import Modal from "./Modal.svelte";
   import CodeSuggest from "./CodeSuggest.svelte";
-  import { codeMatches, isLocator, numberMeaning, pad, type Bonus, type ContestDef, type LogSetup } from "$lib/api";
+  import { codeMatches, isLocator, isRover, numberMeaning, pad, type Bonus, type ContestDef, type LogSetup } from "$lib/api";
 
   let {
     contests,
@@ -410,6 +410,15 @@
           </select>
         </label>
       {/each}
+      {#if contest && isRover(contest, setup)}
+        {@const item = contest.number_list?.item ?? contest.number_label.toLowerCase()}
+        <p class="hint words">
+          Rovers must activate at least two {item}s. When you move, click Moved… next to Sent on the entry line and
+          choose the new {item}{contest.rover?.move_minutes
+            ? `, then wait ${contest.rover.move_minutes} minutes after your last contact before the next one`
+            : ""}.
+        </p>
+      {/if}
     </section>
 
     <section>

@@ -2,7 +2,6 @@
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import BandGrid from "./BandGrid.svelte";
-  import KeyerBar from "./KeyerBar.svelte";
   import {
     api,
     defaultRst as rstFor,
@@ -16,7 +15,6 @@
     zoneLabel,
     type CheckResult,
     type ContestDef,
-    type KeyerConfig,
     type Need,
     type LogSetup,
     type QrzInfo,
@@ -33,8 +31,6 @@
     logVersion,
     worked,
     qrzEnabled,
-    keyer,
-    onkeyerchange,
     onlog,
     check = $bindable(null),
   }: {
@@ -46,9 +42,6 @@
     /** Calls already in the log, highlighted in the Super Check Partial list. */
     worked: Set<string>;
     qrzEnabled: boolean;
-    /** Voice keyer settings, for the F-key bar; none until settings load. */
-    keyer: KeyerConfig | null;
-    onkeyerchange: (config: KeyerConfig) => void;
     onlog: (input: QsoInput) => Promise<void>;
     check?: CheckResult | null;
   } = $props();
@@ -362,7 +355,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="entry" class:steady={!!keyer} role="group" aria-label="QSO entry" {onkeydown}>
+<div class="entry" role="group" aria-label="QSO entry" {onkeydown}>
   <div class="controls">
     <label>
       Band
@@ -585,16 +578,6 @@
     {/if}
   </div>
 
-  {#if keyer}
-    <KeyerBar
-      config={keyer}
-      phone={modeClass(mode) === "PH"}
-      call={callKey}
-      freqHz={rig.connected ? rig.freq_hz : null}
-      onchange={onkeyerchange}
-    />
-  {/if}
-
   {#if callKey && scp && !scp.exact && (scp.partial.length || scp.near.length)}
     <div class="scp mono" aria-label="Super Check Partial">
       {#each scp.partial as c (c)}
@@ -737,11 +720,6 @@
     gap: 12px;
     align-items: center;
     font-size: 0.95rem;
-  }
-  .entry.steady .status {
-    height: 1.4rem;
-    white-space: nowrap;
-    overflow: hidden;
   }
   .strong {
     font-weight: 700;

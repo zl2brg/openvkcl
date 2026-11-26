@@ -17,8 +17,6 @@ const FIRST_STATE: Duration = Duration::from_secs(5);
 /// With keepalive enabled the radio drops clients that stop pinging, and a failed
 /// ping tells us the radio has gone.
 const PING_EVERY: Duration = Duration::from_secs(5);
-/// How long to wait after `xmit 1` for the interlock to say it's transmitting.
-const KEY_UP: Duration = Duration::from_millis(1500);
 
 pub struct Client {
     lines: Lines<BufReader<OwnedReadHalf>>,
@@ -30,11 +28,6 @@ pub struct Client {
     /// When the connection opened; the radio reports its slices soon after.
     connected_at: Instant,
     radio: Radio,
-    /// The GUI client (SmartSDR, AetherSDR, Maestro) we're bound to, if any.
-    bound: Option<String>,
-    /// Whether keying up switched transmit audio to DAX, to switch it off
-    /// again on unkeying.
-    dax_on: bool,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -43,27 +36,12 @@ struct Slice {
     mode: Option<String>,
     tx: bool,
     active: bool,
-    /// Handle of the client the slice belongs to, e.g. "0x1A2B3C4D".
-    owner: String,
 }
 
-/// A GUI client connected to the radio (SmartSDR, AetherSDR, Maestro).
-#[derive(Debug, Clone, PartialEq)]
-struct GuiClient {
-    client_id: String,
-    program: String,
-}
-
-/// What the radio has told us: its slices by index, the GUI clients by handle,
-/// and the transmit interlock.
+/// What the radio has told us: its slices by index.
 #[derive(Default)]
 struct Radio {
     slices: BTreeMap<u32, Slice>,
-    clients: BTreeMap<String, GuiClient>,
-    /// Interlock state, e.g. RECEIVE, TRANSMITTING, NOT_READY.
-    interlock: String,
-    interlock_reason: String,
-    tx_allowed: Option<bool>,
 }
 
 impl Radio {
@@ -77,68 +55,6 @@ impl Radio {
         Some((s.hz?, s.mode.clone()?))
     }
 
-    /// The GUI client to bind to so we may transmit: the one whose slice
-    /// transmits, else the first.
-    fn bind_target(&self) -> Option<&GuiClient> {
-        let tx_owner = self.slices.values().find(|s| s.tx).map(|s| s.owner.as_str());
-        tx_owner
-            .and_then(|h| self.clients.get(h))
-            .or_else(|| self.clients.values().next())
-    }
-
-    /// Why the radio isn't transmitting, from the interlock, or None if it is
-    /// (or hasn't said).
-    fn not_transmitting(&self) -> Option<String> {
-        match self.interlock.as_str() {
-            "TRANSMITTING" | "PTT_REQUESTED" | "" => None,
-            "RECEIVE" | "READY" if self.tx_allowed != Some(false) => None,
-            state => {
-                let why = if !self.interlock_reason.is_empty() {
-                    self.interlock_reason.replace('_', " ").to_lowercase()
-                } else if self.tx_allowed == Some(false) {
-                    "transmit isn't allowed".to_string()
-                } else {
-                    state.replace('_', " ").to_lowercase()
-                };
-                Some(why)
-            }
-        }
-    }
-
-    fn apply_client(&mut self, words: &mut std::str::SplitAsciiWhitespace) {
-        let Some(handle) = words.next() else { return };
-        match words.next() {
-            Some("disconnected") => {
-                self.clients.remove(handle);
-            }
-            Some("connected") => {
-                let fields: BTreeMap<&str, &str> = words.filter_map(|w| w.split_once('=')).collect();
-                // Only GUI clients have a client_id; programs like this one don't.
-                if let Some(id) = fields.get("client_id").filter(|id| !id.is_empty()) {
-                    self.clients.insert(
-                        handle.to_string(),
-                        GuiClient {
-                            client_id: id.to_string(),
-                            program: fields.get("program").unwrap_or(&"").to_string(),
-                        },
-                    );
-                }
-            }
-            _ => {}
-        }
-    }
-
-    fn apply_interlock(&mut self, words: &mut std::str::SplitAsciiWhitespace) {
-        for (key, value) in words.filter_map(|w| w.split_once('=')) {
-            match key {
-                "state" => self.interlock = value.to_string(),
-                "reason" => self.interlock_reason = value.to_string(),
-                "tx_allowed" => self.tx_allowed = Some(value == "1"),
-                _ => {}
-            }
-        }
-    }
-
     /// Apply one line from the radio; true if the frequency or mode changed.
     fn apply(&mut self, line: &str) -> bool {
         let Some(body) = line.strip_prefix('S').and_then(|s| s.split_once('|')).map(|(_, b)| b) else {
@@ -147,14 +63,6 @@ impl Radio {
         let mut words = body.split_ascii_whitespace();
         match words.next() {
             Some("slice") => {}
-            Some("client") => {
-                self.apply_client(&mut words);
-                return false;
-            }
-            Some("interlock") => {
-                self.apply_interlock(&mut words);
-                return false;
-            }
             _ => return false,
         }
         let Some(index) = words.next().and_then(|i| i.parse::<u32>().ok()) else {
@@ -174,7 +82,6 @@ impl Radio {
                 "mode" => slice.mode = Some(value.to_ascii_uppercase()),
                 "tx" => slice.tx = value == "1",
                 "active" => slice.active = value == "1",
-                "client_handle" => slice.owner = value.to_string(),
                 "in_use" => removed = value == "0",
                 "removed" => removed = true,
                 _ => {}
@@ -218,125 +125,12 @@ impl Client {
             last_ping: Instant::now(),
             connected_at: Instant::now(),
             radio: Radio::default(),
-            bound: None,
-            dax_on: false,
         };
         client.send("client program OpenVKCL").await?;
         client.send("keepalive enable").await?;
         client.sub_seq = client.seq + 1;
         client.send("sub slice all").await?;
-        // GUI clients, to bind to one, and the interlock, to see whether we transmit.
-        client.send("sub client all").await?;
-        client.send("sub tx all").await?;
         Ok(client)
-    }
-
-    /// Bind to the GUI client whose slice transmits: the radio only lets a
-    /// program like this one key up on a GUI client's behalf. Done when keying
-    /// up, by when the radio has said whose slice transmits.
-    async fn bind(&mut self) -> Result<(), String> {
-        let Some(target) = self.radio.bind_target().map(|c| c.client_id.clone()) else {
-            return Ok(());
-        };
-        if self.bound.as_deref() != Some(target.as_str()) {
-            self.send(&format!("client bind client_id={target}")).await?;
-            self.bound = Some(target);
-        }
-        Ok(())
-    }
-
-    /// Key or unkey the transmitter, and check the radio really did key up.
-    pub async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
-        if !on {
-            let unkeyed = self.xmit(false).await;
-            // As N1MM does: DAX off when the message ends, back to the mic.
-            if std::mem::take(&mut self.dax_on) {
-                self.request("transmit set dax=0").await?;
-            }
-            return unkeyed;
-        }
-        if self.radio.slices.is_empty() {
-            return Err("FlexRadio has no slice open: start AetherSDR or SmartSDR with a slice to transmit on".into());
-        }
-        self.bind().await?;
-        // The voice keyer's audio comes from the computer through DAX, not the
-        // mic: DAX on for each message, as N1MM does.
-        self.request("transmit set dax=1")
-            .await
-            .map_err(|e| format!("FlexRadio wouldn't take transmit audio from DAX: {e}"))?;
-        self.dax_on = true;
-        let keyed = self.xmit(true).await;
-        if keyed.is_err() && std::mem::take(&mut self.dax_on) {
-            let _ = self.request("transmit set dax=0").await;
-        }
-        keyed
-    }
-
-    /// Send a command and wait for the radio's answer, taking in whatever else
-    /// it says meanwhile.
-    async fn request(&mut self, command: &str) -> Result<(), String> {
-        self.send(command).await?;
-        let seq = self.seq;
-        let deadline = Instant::now() + TIMEOUT;
-        loop {
-            match timeout_at(deadline, self.lines.next_line()).await {
-                Err(_) => return Err("no answer".into()),
-                Ok(Ok(None)) => return Err("FlexRadio closed the connection".into()),
-                Ok(Err(e)) => return Err(format!("FlexRadio: {e}")),
-                Ok(Ok(Some(line))) => {
-                    if let Some((s, error)) = response(&line)
-                        && s == seq
-                    {
-                        return error.map_or(Ok(()), Err);
-                    }
-                    self.radio.apply(&line);
-                }
-            }
-        }
-    }
-
-    /// Key or unkey, and when keying, check the interlock says it's transmitting.
-    async fn xmit(&mut self, on: bool) -> Result<(), String> {
-        self.send(if on { "xmit 1" } else { "xmit 0" }).await?;
-        let seq = self.seq;
-        let deadline = Instant::now() + TIMEOUT;
-        let mut answered = false;
-        let mut key_up = deadline;
-        loop {
-            match timeout_at(if answered { key_up } else { deadline }, self.lines.next_line()).await {
-                Err(_) if answered => {
-                    // No interlock news: assume it keyed rather than leave it unkeyed.
-                    return Ok(());
-                }
-                Err(_) => return Err("FlexRadio didn't answer the transmit command".into()),
-                Ok(Ok(None)) => return Err("FlexRadio closed the connection".into()),
-                Ok(Err(e)) => return Err(format!("FlexRadio: {e}")),
-                Ok(Ok(Some(line))) => {
-                    if let Some((s, error)) = response(&line)
-                        && s == seq
-                    {
-                        if let Some(e) = error {
-                            return Err(format!("FlexRadio refused to transmit: {e}"));
-                        }
-                        if !on {
-                            return Ok(());
-                        }
-                        answered = true;
-                        key_up = Instant::now() + KEY_UP;
-                        continue;
-                    }
-                    self.radio.apply(&line);
-                    if answered && line.contains("interlock") {
-                        if matches!(self.radio.interlock.as_str(), "TRANSMITTING" | "PTT_REQUESTED") {
-                            return Ok(());
-                        }
-                        if let Some(why) = self.radio.not_transmitting() {
-                            return Err(format!("FlexRadio won't transmit: {why}"));
-                        }
-                    }
-                }
-            }
-        }
     }
 
     /// Send one SmartSDR API command, e.g. `spot add ...`.
@@ -552,7 +346,7 @@ mod tests {
             write.write_all(b"V1.4.0.0\nH2D3A1B2C\n").await.unwrap();
             let mut lines = BufReader::new(read).lines();
             let mut got = Vec::new();
-            while got.len() < 5 {
+            while got.len() < 3 {
                 got.push(lines.next_line().await.unwrap().unwrap());
             }
             write
@@ -570,99 +364,11 @@ mod tests {
         assert_eq!(c.poll(Duration::from_secs(1)).await.unwrap(), Some((3_650_000, "CW".into())));
         let got = radio.await.unwrap();
         assert_eq!(
-            got[..5],
-            ["C1|client program OpenVKCL", "C2|keepalive enable", "C3|sub slice all", "C4|sub client all", "C5|sub tx all"]
+            got[..3],
+            ["C1|client program OpenVKCL", "C2|keepalive enable", "C3|sub slice all"]
         );
-        assert!(got[5].starts_with("C6|spot add rx_freq=3.650000 callsign=VK2ABC"));
+        assert!(got[3].starts_with("C4|spot add rx_freq=3.650000 callsign=VK2ABC"));
         assert_eq!(c.poll(Duration::from_secs(1)).await, Err("FlexRadio closed the connection".into()));
-    }
-
-    /// A fake radio for PTT: AetherSDR's slice transmits and transmit audio
-    /// starts on the mic. It answers every command; `answer` is its answer to
-    /// `xmit 1`, followed by the `interlock` line. Returns the commands it got.
-    async fn ptt_radio(answer: &'static str, interlock: &'static str) -> (Client, tokio::task::JoinHandle<Vec<String>>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        let radio = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            let (read, mut write) = stream.into_split();
-            let mut lines = BufReader::new(read).lines();
-            let mut got = Vec::new();
-            while got.len() < 5 {
-                got.push(lines.next_line().await.unwrap().unwrap());
-            }
-            write
-                .write_all(
-                    b"S0|client 0x11111111 connected local_ptt=0 client_id=AAAA-BBBB program=SmartSDR-Win station=Shack\n\
-                      S0|client 0x22222222 connected local_ptt=1 client_id=CCCC-DDDD program=AetherSDR station=Mac\n\
-                      S1|slice 0 in_use=1 RF_frequency=14.200000 mode=USB tx=1 client_handle=0x22222222\n\
-                      S0|transmit freq=14.200000 dax=0 mic_level=50\n\
-                      S0|interlock state=RECEIVE reason= tx_allowed=1\n",
-                )
-                .await
-                .unwrap();
-            while let Ok(Ok(Some(line))) = timeout(Duration::from_millis(500), lines.next_line()).await {
-                let seq = line[1..].split('|').next().unwrap().to_string();
-                let reply = if line.ends_with("xmit 1") {
-                    format!("R{seq}|{answer}\n{interlock}\n")
-                } else if let Some(dax) = line.strip_suffix("transmit set dax=1").map(|_| 1).or(line.strip_suffix("transmit set dax=0").map(|_| 0)) {
-                    format!("R{seq}|0|\nS0|transmit dax={dax}\n")
-                } else {
-                    format!("R{seq}|0|\n")
-                };
-                write.write_all(reply.as_bytes()).await.unwrap();
-                got.push(line);
-            }
-            got
-        });
-        let mut c = Client::connect("127.0.0.1", port).await.unwrap();
-        assert_eq!(c.poll(Duration::from_millis(200)).await.unwrap(), Some((14_200_000, "USB".into())));
-        (c, radio)
-    }
-
-    #[tokio::test]
-    async fn binds_and_keys_up_on_dax() {
-        let (mut c, radio) = ptt_radio("0|", "S0|interlock state=TRANSMITTING reason= tx_allowed=1").await;
-        assert_eq!(c.set_ptt(true).await, Ok(()));
-        assert_eq!(c.set_ptt(false).await, Ok(()));
-        drop(c);
-        let got = radio.await.unwrap();
-        // Bound to AetherSDR, whose slice transmits; transmit audio switched to
-        // DAX for the message, then back to the mic.
-        assert_eq!(
-            got[5..],
-            [
-                "C6|client bind client_id=CCCC-DDDD",
-                "C7|transmit set dax=1",
-                "C8|xmit 1",
-                "C9|xmit 0",
-                "C10|transmit set dax=0"
-            ]
-        );
-    }
-
-    #[tokio::test]
-    async fn says_why_it_wont_transmit() {
-        let (mut c, radio) = ptt_radio("50000016|Transmit not allowed", "").await;
-        assert_eq!(c.set_ptt(true).await, Err("FlexRadio refused to transmit: Transmit not allowed".into()));
-        drop(c);
-        // DAX is put back when keying up fails.
-        assert_eq!(radio.await.unwrap().last().unwrap(), "C9|transmit set dax=0");
-        let (mut c, _) = ptt_radio("0|", "S0|interlock state=NOT_READY reason=AMP_FAULT tx_allowed=1").await;
-        assert_eq!(c.set_ptt(true).await, Err("FlexRadio won't transmit: amp fault".into()));
-    }
-
-    #[tokio::test]
-    async fn no_slice_no_transmit() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        tokio::spawn(async move {
-            let _conn = listener.accept().await.unwrap();
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        });
-        let mut c = Client::connect("127.0.0.1", port).await.unwrap();
-        let e = c.set_ptt(true).await.unwrap_err();
-        assert!(e.contains("no slice open"), "{e}");
     }
 
     /// Connected with no slice open, until one opens and after it closes.

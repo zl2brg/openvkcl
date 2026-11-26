@@ -5,10 +5,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Removed
+
+- The voice keyer: the F1–F12 messages, recording and transmitting through the radio.
+
 ### Changed
 
-- The voice keyer is off until you tick **Voice keyer** in the toolbar. The
-  F-key controls and **Voice keyer…** appear only while it is ticked.
 - In a contest, Space and Tab stop on RST sent before RST received.
 - Phone, CW and RTTY reports can be 59 or 599.
 - A generic contest: name, length, bands and one exchange (none, serial, locator

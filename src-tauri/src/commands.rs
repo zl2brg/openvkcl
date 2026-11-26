@@ -7,7 +7,6 @@ use crate::export::{adif, cabrillo, scoresheet};
 use crate::import::{self, ImportSummary};
 use crate::model::{LogSetup, Qso, QsoInput};
 use crate::qrz::{Qrz, QrzConfig, QrzInfo};
-use crate::keyer::{self, Devices, Keyer, KeyerStatus};
 use crate::rig::hamlib::{self, RigModel, SerialPort};
 use crate::rig::{Rig, RigConfig, RigKind, RigStatus, flex, tci};
 use crate::scp::{self, Scp, ScpMatches};
@@ -99,9 +98,6 @@ pub struct AppState {
     pub settings: Mutex<Settings>,
     pub settings_path: PathBuf,
     pub rig: Arc<Rig>,
-    pub keyer: Keyer,
-    /// Where voice keyer recordings are kept.
-    pub voice_dir: PathBuf,
     pub scp: Mutex<Scp>,
     pub scp_path: PathBuf,
     pub cty: Mutex<Cty>,
@@ -125,8 +121,6 @@ impl AppState {
             settings: Mutex::new(Settings::load(&settings_path)),
             settings_path,
             rig: Arc::new(Rig::default()),
-            keyer: Keyer::default(),
-            voice_dir: config_dir.join("voice"),
             scp: Mutex::new(Scp::load(&scp_path)),
             scp_path,
             cty: Mutex::new(Cty::load(&cty_path)),
@@ -844,53 +838,6 @@ pub fn rig_disconnect(app: AppHandle, state: State<AppState>) {
 #[tauri::command]
 pub fn rig_status(state: State<AppState>) -> RigStatus {
     state.rig.status()
-}
-
-#[derive(Serialize)]
-pub struct KeyerInfo {
-    devices: Devices,
-    voice_dir: String,
-    status: KeyerStatus,
-}
-
-/// Sound devices, where recordings go, and what the keyer is doing.
-#[tauri::command]
-pub async fn keyer_info(state: State<'_, AppState>) -> CmdResult<KeyerInfo> {
-    // Listing devices can be slow on some systems; keep it off the UI thread.
-    let devices = tauri::async_runtime::spawn_blocking(keyer::devices)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(KeyerInfo {
-        devices,
-        voice_dir: state.voice_dir.display().to_string(),
-        status: state.keyer.status(),
-    })
-}
-
-/// Key the radio and play a message file, named in the voice folder or by full path.
-#[tauri::command]
-pub fn keyer_play(app: AppHandle, state: State<AppState>, file: String) -> CmdResult<()> {
-    if file.trim().is_empty() {
-        return Err("No recording for this key yet: record one with Ctrl+Shift and the F-key".into());
-    }
-    let cfg = state.settings.lock().unwrap().keyer.clone();
-    let path = keyer::resolve(&state.voice_dir, &file);
-    state.keyer.play(app, state.rig.clone(), cfg, path);
-    Ok(())
-}
-
-/// Stop playing (unkeying the radio) or recording.
-#[tauri::command]
-pub fn keyer_stop(state: State<AppState>) {
-    state.keyer.stop();
-}
-
-/// Record a message from the microphone into `file` in the voice folder, until stopped.
-#[tauri::command]
-pub fn keyer_record(app: AppHandle, state: State<AppState>, file: String) -> CmdResult<()> {
-    let cfg = state.settings.lock().unwrap().keyer.clone();
-    state.keyer.record(app, cfg, keyer::resolve(&state.voice_dir, &file));
-    Ok(())
 }
 
 #[tauri::command]

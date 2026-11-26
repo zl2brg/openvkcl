@@ -96,16 +96,6 @@ impl Client {
         parse_value(&response).ok_or_else(|| format!("Unexpected reply from FLRig to {method}"))
     }
 
-    /// Key or unkey the transmitter.
-    pub async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
-        let param = format!("<param><value><i4>{}</i4></value></param>", u8::from(on));
-        // set_ptt returns nothing, which FLRig sends as an empty value.
-        match self.call_with("rig.set_ptt", &param).await {
-            Err(e) if e.starts_with("Unexpected reply") => Ok(()),
-            other => other.map(|_| ()),
-        }
-    }
-
     pub async fn poll(&mut self) -> Result<(u64, String), String> {
         let freq = self.call("rig.get_vfo").await?;
         let hz = freq

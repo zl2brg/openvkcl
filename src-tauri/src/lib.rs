@@ -7,7 +7,6 @@ mod dxcc;
 mod export;
 mod geo;
 mod import;
-mod keyer;
 mod model;
 mod modes;
 mod qrz;
@@ -68,10 +67,6 @@ pub fn run() {
             commands::rig_connect,
             commands::rig_disconnect,
             commands::rig_status,
-            commands::keyer_info,
-            commands::keyer_play,
-            commands::keyer_stop,
-            commands::keyer_record,
             commands::rig_models,
             commands::flex_discover,
             commands::serial_ports,
@@ -93,9 +88,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
-                let state = app.state::<AppState>();
-                state.keyer.stop();
-                state.rig.shutdown();
+                app.state::<AppState>().rig.shutdown();
             }
         });
 }

@@ -21,7 +21,6 @@
     type LogView,
     type Qso,
     type QsoInput,
-    type KeyerConfig,
     type QrzConfig,
     type QsoRow,
     type RigStatus,
@@ -35,7 +34,6 @@
   import ScorePanel from "$lib/components/ScorePanel.svelte";
   import SetupDialog from "$lib/components/SetupDialog.svelte";
   import RigDialog from "$lib/components/RigDialog.svelte";
-  import KeyerDialog from "$lib/components/KeyerDialog.svelte";
   import EditQsoDialog from "$lib/components/EditQsoDialog.svelte";
   import CabrilloDialog from "$lib/components/CabrilloDialog.svelte";
   import AboutDialog from "$lib/components/AboutDialog.svelte";
@@ -66,13 +64,6 @@
 
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
   let rigDialog = $state(false);
-  let keyerDialog = $state(false);
-  /** The voice keyer is optional and off until ticked. Remembered on this computer. */
-  let showKeyer = $state(localStorage.getItem("voiceKeyer") === "1");
-  $effect(() => {
-    localStorage.setItem("voiceKeyer", showKeyer ? "1" : "0");
-    if (!showKeyer) keyerDialog = false;
-  });
   let aboutDialog = $state(false);
   let lookupDialog = $state(false);
   let editRow = $state<QsoRow | null>(null);
@@ -389,17 +380,6 @@
     }
   }
 
-  /** Save the voice keyer settings: from its dialog, a new recording or the repeat time. */
-  async function saveKeyer(keyer: KeyerConfig) {
-    if (!settings) return;
-    try {
-      settings.keyer = keyer;
-      await api.saveSettings($state.snapshot(settings) as Settings);
-    } catch (e) {
-      say(errorText(e), true);
-    }
-  }
-
   async function connectRig(config: Settings["rig"]) {
     try {
       await api.rigConnect(config);
@@ -469,14 +449,6 @@
     {/if}
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
-    <label class="check" title="Show the F-key voice messages and the Voice keyer settings. Off, the F-keys do nothing.">
-      <input type="checkbox" bind:checked={showKeyer} /> Voice keyer
-    </label>
-    {#if showKeyer}
-      <button onclick={() => (keyerDialog = true)} disabled={!settings} title="F-key voice messages and CQ repeat"
-        >Voice keyer…</button
-      >
-    {/if}
     <button onclick={() => (lookupDialog = true)} title="Super Check Partial and QRZ.com">Lookups…</button>
     <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
@@ -496,8 +468,6 @@
           {logVersion}
           {worked}
           qrzEnabled={!!settings?.qrz.enabled}
-          keyer={showKeyer ? (settings?.keyer ?? null) : null}
-          onkeyerchange={saveKeyer}
           onlog={logQso}
         />
         <div class="table">
@@ -561,19 +531,6 @@
     {version}
     onclose={() => {
       aboutDialog = false;
-      refocus();
-    }}
-  />
-{/if}
-
-{#if keyerDialog && settings}
-  <KeyerDialog
-    initial={settings.keyer}
-    radioConnected={rig.connected}
-    tci={settings.rig.kind === "tci"}
-    onsave={saveKeyer}
-    onclose={() => {
-      keyerDialog = false;
       refocus();
     }}
   />
@@ -713,13 +670,6 @@
     height: 20px;
     background: var(--border);
     margin: 0 4px;
-  }
-  nav .check {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.9rem;
-    margin-left: 4px;
   }
   .notice {
     margin-left: auto;

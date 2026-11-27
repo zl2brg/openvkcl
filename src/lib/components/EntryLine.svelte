@@ -2,6 +2,7 @@
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import BandGrid from "./BandGrid.svelte";
+  import CodeSuggest from "./CodeSuggest.svelte";
   import {
     api,
     defaultRst as rstFor,
@@ -10,7 +11,9 @@
     dateTimeText,
     generalMode,
     isFutureQsoTime,
+    isRover,
     modeClass,
+    numberMeaning,
     parseDateTimeText,
     zoneLabel,
     type CheckResult,
@@ -32,6 +35,7 @@
     worked,
     qrzEnabled,
     onlog,
+    onmove,
     check = $bindable(null),
   }: {
     contest: ContestDef;
@@ -43,6 +47,8 @@
     worked: Set<string>;
     qrzEnabled: boolean;
     onlog: (input: QsoInput) => Promise<void>;
+    /** A rover has moved: choose the code it sends from now on. */
+    onmove: () => void;
     check?: CheckResult | null;
   } = $props();
 
@@ -154,6 +160,16 @@
       if (previous[i].name || previous[i].qth) return previous[i];
     }
     return null;
+  });
+
+  /** The number field takes codes from an official list (e.g. VK Shires "BU4"), not just digits. */
+  let coded = $derived(!!contest.number_list);
+  let exchSuggest = $state<CodeSuggest>();
+  let exchFocused = $state(false);
+  /** What the received code stands for, e.g. "Bundaberg, Qld" or "CQ zone 32". */
+  let exchMeaning = $derived.by(() => {
+    const code = rcvdExch.trim() || check?.known_exch || "";
+    return hasExch && code ? numberMeaning(contest, code) : null;
   });
 
   let callKey = $derived(call.trim().toUpperCase());
@@ -469,6 +485,16 @@
           style:width="{Math.max(8, sentText.length + 2)}ch"
         />
       </label>
+      {#if isRover(contest, setup)}
+        <button
+          class="move"
+          tabindex="-1"
+          onclick={onmove}
+          title="You've moved: choose the {contest.number_list?.item ?? contest.number_label} you send from now on"
+        >
+          Moved…
+        </button>
+      {/if}
     {/if}
     {#if hasNr}
       <label class="nr">
@@ -487,16 +513,30 @@
       </label>
     {/if}
     {#if hasExch}
-      <label class="nr">
+      <label class="nr" class:coded>
         {contest.number_label}
         <input
           class="mono"
           bind:this={exchInput}
           bind:value={rcvdExch}
+          oninput={() => coded && (rcvdExch = rcvdExch.toUpperCase())}
+          onkeydown={(e) => exchSuggest?.key(e)}
+          onfocus={() => (exchFocused = true)}
+          onblur={() => (exchFocused = false)}
           placeholder={check?.known_exch ?? ""}
-          inputmode="numeric"
+          inputmode={coded ? "text" : "numeric"}
           autocomplete="off"
+          spellcheck="false"
         />
+        {#if coded}
+          <CodeSuggest
+            bind:this={exchSuggest}
+            {contest}
+            typed={rcvdExch}
+            open={exchFocused}
+            onpick={(code) => (rcvdExch = code)}
+          />
+        {/if}
       </label>
     {/if}
     {#if hasLoc}
@@ -566,8 +606,13 @@
         <span>{r.points.toFixed(r.points % 1 ? 1 : 0)} pts</span>
         {#if r.distance_km != null}<span>{r.distance_km.toFixed(0)} km</span>{/if}
         {#if r.new_mult}<span class="mult">NEW MULT {r.mult}</span>{/if}
+        {#if exchMeaning}<span class="country">{exchMeaning}</span>{/if}
         {#if r.warning}<span class="warn">{r.warning}</span>{/if}
       {/if}
+    {:else if contest.number_list_error}
+      <span class="warn" title={contest.number_list_error}
+        >{contest.number_label} codes can't be checked: {contest.number_list_error}</span
+      >
     {:else}
       <span class="muted"
         >{general
@@ -670,6 +715,9 @@
   }
   .sent input {
     color: var(--muted);
+  }
+  label.coded {
+    position: relative;
   }
   .nr input {
     width: 6ch;

@@ -330,7 +330,7 @@ mod tests {
         let (defs, errs) = load_all(None);
         assert!(errs.is_empty(), "{errs:?}");
         // Known exceptions: underscore / space are outside A–Z, 0–9, hyphen.
-        let exceptions = ["WIA_VHFUHF", "WIA-HARRY ANGEL", "WIA-TRANS TASMAN"];
+        let exceptions = ["WIA_VHFUHF", "WIA-HARRY ANGEL", "WIA-TRANS TASMAN", "WIA-VK SHIRES"];
         let mut bad = Vec::new();
         for d in defs.iter().filter(|d| !d.general) {
             if !contest_name_ok(&d.cabrillo_name) && !exceptions.contains(&d.cabrillo_name.as_str())

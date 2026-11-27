@@ -1,0 +1,100 @@
+# WIA VK Shires Contest
+# https://www.wia.org.au/members/contests/wavks/
+#
+# Saturday and Sunday of the weekend before the second Monday in June,
+# 0000-0000 UTC. Cabrillo 3 logs to vklogchecker.com or vkshires@wia.org.au within
+# 14 days. Rules checked against the 2026 rules PDF.
+#
+# VK stations send RS(T) and their shire code from the WIA list (e.g. 59 BU4);
+# stations outside VK send RS(T) and their CQ zone (e.g. 59 32). Shire codes are
+# checked against the WIA's Shire.db3, which goes in the app's contests folder
+# (see the README), so it can be replaced whenever the WIA updates it.
+#
+# Rovers (CATEGORY-STATION ROVER) must activate at least two shires. A rover in a
+# new shire is a new contact for the stations working it, and counts the same
+# multipliers again there. It must wait 5 minutes after moving before its next
+# contact.
+id = "wia-vkshires"
+name = "WIA VK Shires"
+cabrillo_name = "WIA-VK SHIRES"
+rules_url = "https://www.wia.org.au/members/contests/wavks/"
+duration_minutes = 1440
+default_start_utc = "00:00"
+# Plus the 75 m DX window for VK stations, which is part of 80 m.
+bands = ["160m", "80m", "40m", "20m", "15m", "10m"]
+modes = ["PH", "CW"]
+exchange = ["rst", "number"]
+number_label = "Shire/Zone"
+
+[number_list]
+file = "Shire.db3"
+item = "shire"
+cq_zones = true
+url = "https://www.wia.org.au/members/contests/wavks/documents/Shire.db3"
+
+# Each station again on each band and mode in each 4-hour slot from 0000 UTC.
+[blocks]
+minutes = 240
+
+[rework]
+kind = "block"
+per = ["band", "mode"]
+
+[scoring]
+formula = "points_times_mults"
+
+[scoring.points]
+kind = "fixed"
+base = 1
+
+# Each shire and each CQ zone, once per band and mode for the whole contest.
+[multiplier]
+kind = "number"
+per = ["band", "mode"]
+
+[[categories]]
+key = "CATEGORY-OPERATOR"
+label = "Operator"
+options = ["SINGLE-OP", "MULTI-OP"]
+default = "SINGLE-OP"
+
+[[categories]]
+key = "CATEGORY-TRANSMITTER"
+label = "Transmitters (multi-op: up to two)"
+options = ["ONE", "TWO"]
+default = "ONE"
+
+[[categories]]
+key = "CATEGORY-POWER"
+label = "Power (QRP for the 10 W section: Foundation and other QRP)"
+options = ["HIGH", "LOW", "QRP"]
+default = "HIGH"
+
+[[categories]]
+key = "CATEGORY-ASSISTED"
+label = "Assisted"
+options = ["NON-ASSISTED", "ASSISTED"]
+default = "NON-ASSISTED"
+
+[rover]
+category = "CATEGORY-STATION"
+value = "ROVER"
+move_minutes = 5
+
+[[categories]]
+key = "CATEGORY-STATION"
+label = "Station (rover: at least two shires)"
+options = ["FIXED", "PORTABLE", "ROVER"]
+default = "FIXED"
+
+[[categories]]
+key = "CATEGORY-BAND"
+label = "Band"
+options = ["ALL"]
+default = "ALL"
+
+[[categories]]
+key = "CATEGORY-MODE"
+label = "Mode"
+options = ["MIXED", "SSB", "CW"]
+default = "MIXED"

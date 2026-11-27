@@ -27,6 +27,12 @@ export interface ContestDef {
   exchange: ExchField[];
   number_label: string;
   number_from: string[];
+  /** An official list of codes for the number field (e.g. VK Shires), read from the contests folder. */
+  number_list: NumberList | null;
+  /** Listed codes and what they stand for, e.g. BU4 -> "Bundaberg, Qld". Empty if the list couldn't be read. */
+  number_names: Record<string, string>;
+  /** Why the list couldn't be read, e.g. the file isn't there yet. */
+  number_list_error: string | null;
   serial_per_band: boolean;
   /** When the setup dialog should tick separate serials per band. */
   serial_per_band_when: "never" | "multi_op" | "multi_tx";
@@ -48,11 +54,69 @@ export interface ContestDef {
   };
   score_groups: { name: string; bands: string[] }[];
   categories: CategoryField[];
+  /** Stations that move between areas (e.g. VK Shires rovers), chosen by a category. */
+  rover: { category: string; value: string; move_minutes: number } | null;
   scoring: {
     bonus: Bonus[];
     /** Only "fixed" points have `local_time`: a points factor between two local times (e.g. RD's 01:00-06:00 x3). */
     points: { kind: string; local_time?: { from: string; to: string; factor: number } | null };
   };
+}
+
+export interface NumberList {
+  file: string;
+  /** What one code is called, e.g. "shire". */
+  item: string;
+  /** CQ zones 1-40 are valid too. */
+  cq_zones: boolean;
+  url: string;
+}
+
+/** Whether a log is a rover's, so the code it sends can change as it moves. */
+export function isRover(contest: ContestDef, setup: LogSetup): boolean {
+  const r = contest.rover;
+  return !!r && setup.categories[r.category] === r.value;
+}
+
+/**
+ * What a number-field code stands for in a contest with a code list: the listed name, "CQ zone N", or "" when it
+ * isn't valid. `null` when there's nothing to check against (no list, or it couldn't be read).
+ */
+export function numberMeaning(contest: ContestDef, code: string): string | null {
+  const list = contest.number_list;
+  if (!list) return null;
+  const c = code.trim().toUpperCase();
+  const listed = contest.number_names[c];
+  if (listed) return listed;
+  if (list.cq_zones && /^\d+$/.test(c) && +c >= 1 && +c <= 40) return `CQ zone ${+c}`;
+  return Object.keys(contest.number_names).length ? "" : null;
+}
+
+/**
+ * Listed codes whose code or name matches what's been typed, best first:
+ * codes starting with it, then names starting with it, then names with a later
+ * word starting with it, then names containing it. "BU" finds BU4 Bundaberg; "bunda" and "berg" find it too.
+ * Nothing once a listed code has been typed in full.
+ */
+export function codeMatches(contest: ContestDef, typed: string, limit = 8): [string, string][] {
+  const q = typed.trim().toUpperCase();
+  if (!q || contest.number_names[q]) return [];
+  const ranked: [number, string, string][] = [];
+  for (const [code, name] of Object.entries(contest.number_names)) {
+    const n = name.toUpperCase();
+    const rank = code.startsWith(q)
+      ? 0
+      : n.startsWith(q)
+        ? 1
+        : n.includes(" " + q)
+          ? 2
+          : n.includes(q)
+            ? 3
+            : -1;
+    if (rank >= 0) ranked.push([rank, code, name]);
+  }
+  ranked.sort((a, b) => a[0] - b[0] || a[2].localeCompare(b[2]));
+  return ranked.slice(0, limit).map(([, code, name]) => [code, name]);
 }
 
 export interface Bonus {
@@ -281,6 +345,18 @@ export interface CheckResult {
   previous: QsoRow[];
 }
 
+/** A contest's list of exchange codes, e.g. the WIA's Shire.db3. */
+export interface CodeListStatus {
+  file: string;
+  item: string;
+  url: string;
+  count: number;
+  path: string;
+  updated: string | null;
+  error: string | null;
+  contests: string[];
+}
+
 export interface CtyStatus {
   count: number;
   path: string;
@@ -445,6 +521,9 @@ export const api = {
   ctyStatus: () => invoke<CtyStatus>("cty_status"),
   ctyDownload: () => invoke<CtyStatus>("cty_download"),
   ctyImport: (path: string) => invoke<CtyStatus>("cty_import", { path }),
+  codeLists: () => invoke<CodeListStatus[]>("code_lists"),
+  codeListDownload: (file: string) => invoke<CodeListStatus[]>("code_list_download", { file }),
+  codeListImport: (file: string, path: string) => invoke<CodeListStatus[]>("code_list_import", { file, path }),
   exportScoreSheet: (path: string) =>
     invoke<void>("export_score_sheet", { path }),
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),

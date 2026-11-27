@@ -1,6 +1,6 @@
 # OpenVKCL
 
-<img width="1613" height="1014" alt="image" src="https://github.com/user-attachments/assets/c9d3fa3b-152a-418a-a02a-fdfb76908c23" />
+<img width="1410" height="986" alt="image" src="https://github.com/user-attachments/assets/ef4f4795-cfcf-49ec-9b64-44bb9637d1d1" />
 
 
 A cross-platform (Windows, Linux, macOS) contest logger for Australian and New
@@ -18,6 +18,10 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   VHF-UHF Field Day, multi-two and multi-multi in John Moyle, and multi-multi
   in Trans-Tasman. Single-operator entries keep one series, as do multi-single
   entries in John Moyle and Trans-Tasman.
+- WIA VK Shires: shire codes checked against the WIA's own shire list, which
+  you can replace whenever the WIA publishes a new one (see
+  [VK Shires](#vk-shires)), CQ zones from stations outside VK, and shires and
+  zones counted as multipliers on each band and mode.
 - NZART HF contests: Jock White Memorial Field Day, Memorial Contest and
   Sangster Shield, with their one-hour (or half-hour) periods, separate serial
   numbers per band, and branch-number multipliers.
@@ -66,7 +70,7 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
   (one character different) suggestions, as you type. Download the latest
   MASTER.SCP from **Lookups…** or import your own file. MASTER.SCP and the
   cty.csv country file also download in the background at startup when missing
-  or more than a week old.
+  or more than a week old, and the VK Shires list when missing.
 - QRZ.com lookups: name, location and grid for each callsign (needs a QRZ.com
   XML subscription for more than name and country).
 - Opening a log in a newer OpenVKCL adds any new columns without bumping the
@@ -120,6 +124,35 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
 
 In contests that exchange an NZART branch number, the branch box fills in from
 your last contact with that station, so you only type it once.
+
+### VK Shires
+
+VK stations send RS(T) and their shire code (e.g. `59 BU4`); stations outside
+VK send RS(T) and their CQ zone (e.g. `59 32`). The codes come from the WIA's
+official list (**Shire.db3**, the same file VKCL uses), which changes from time
+to time, so OpenVKCL reads the WIA's own file rather than keeping a copy. It
+downloads in the background the first time OpenVKCL starts, and is kept with
+MASTER.SCP and the country file. When the WIA publishes a new list, update it
+under **Lookups…**: **Download latest** fetches it from the
+[VK Shires page](https://www.wia.org.au/members/contests/wavks/), and
+**Import file…** takes a copy you've been sent. A file that isn't a shire list
+leaves the old one in place, and a new list is used straight away.
+
+With the list in place, the Shire/Zone box shows the shire's name (or "CQ zone
+32") as you type, and warns about a code that isn't on the list: the WIA
+deducts points for those, and they don't count as multipliers. Type part of a
+code or a place name (`bu`, `bunda`) to get a list of matching shires: arrows
+choose, Enter, Space or Tab takes one. The setup dialog checks your own shire
+code the same way. Without the file, any code is accepted and counted, and the
+entry line says the list is missing.
+
+Rovers choose **ROVER** as the station category. When you move, click
+**Moved…** next to Sent on the entry line and choose the new shire; contacts from
+then on send it. Each shire you operate from counts its multipliers again, and
+stations can work you again once you're in a new shire (likewise, a rover you
+work from a new shire isn't a dupe). A contact less than 5 minutes after the last
+one from a different shire is flagged, as the rules require that gap. The rules
+also require at least two shires.
 
 ### Radio control
 

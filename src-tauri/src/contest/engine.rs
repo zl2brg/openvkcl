@@ -1,4 +1,4 @@
-use super::def::{Bonus, ContestDef, Dim, ExchField, Formula, MultKind, Points, ReworkKind};
+use super::def::{Bonus, ContestDef, Dim, ExchField, Formula, MultKind, Points, ReworkKind, norm_code};
 use crate::model::{LogSetup, Qso};
 use crate::{callsign, geo};
 use chrono::{DateTime, Duration, NaiveTime, Utc};
@@ -108,11 +108,22 @@ fn exchange_warning(def: &ContestDef, setup: &LogSetup, q: &Qso) -> Option<Strin
     if def.has_field(ExchField::Serial) && !numeric(&q.rcvd_nr) {
         problems.push("received serial number missing".to_string());
     }
-    if def.has_field(ExchField::Number)
-        && callsign::matches_any(&q.call, &def.number_from)
-        && !numeric(&q.rcvd_exch)
-    {
-        problems.push(format!("received {} missing", def.number_label.to_lowercase()));
+    if def.has_field(ExchField::Number) && callsign::matches_any(&q.call, &def.number_from) {
+        let missing = format!("received {} missing", def.number_label.to_lowercase());
+        match &def.number_list {
+            // Listed codes can have letters (e.g. shire "BU4"); check them against the list.
+            Some(list) => {
+                let code = norm_code(&q.rcvd_exch);
+                if code.is_empty() {
+                    problems.push(missing);
+                } else if def.number_valid(&code) == Some(false) {
+                    let zones = if list.cq_zones { " or a CQ zone" } else { "" };
+                    problems.push(format!("{code} is not a listed {}{zones}", list.item));
+                }
+            }
+            None if !numeric(&q.rcvd_exch) => problems.push(missing),
+            None => {}
+        }
     }
     if def.has_field(ExchField::Locator) && !def.generic {
         if q.rcvd_locator.len() < 6 || !geo::is_valid(&q.rcvd_locator) {
@@ -270,7 +281,7 @@ fn basic_points(def: &ContestDef, setup: &LogSetup, q: &Qso) -> (f64, Option<f64
     }
 }
 
-fn dupe_key(def: &ContestDef, q: &Qso, block: i64) -> String {
+fn dupe_key(def: &ContestDef, setup: &LogSetup, q: &Qso, block: i64) -> String {
     let mut key = callsign::normalize(&q.call);
     for dim in &def.rework.per {
         key.push('|');
@@ -290,12 +301,21 @@ fn dupe_key(def: &ContestDef, q: &Qso, block: i64) -> String {
             geo::square(&q.rcvd_locator)
         ));
     }
+    // A rover in a new area is a new contact: the other station may be one, and
+    // so may this log.
+    if def.rover.is_some() {
+        key.push_str(&format!("|{}", norm_number(&q.rcvd_exch)));
+        if def.is_rover(setup) {
+            key.push_str(&format!("|{}", norm_number(&q.sent_exch)));
+        }
+    }
     key
 }
 
-/// "007" -> "7", "00" -> "0", so branch numbers compare however they were typed.
+/// "007" -> "7", "00" -> "0", "bu4" -> "BU4", so numbers and codes compare
+/// however they were typed.
 fn norm_number(s: &str) -> String {
-    let s = s.trim();
+    let s = norm_code(s);
     let t = s.trim_start_matches('0');
     if t.is_empty() && !s.is_empty() { "0".into() } else { t.to_string() }
 }
@@ -310,7 +330,12 @@ fn mult_value(def: &ContestDef, setup: &LogSetup, q: &Qso, prefix: &str) -> Opti
         MultKind::Prefix => prefix.to_string(),
         MultKind::Number => {
             let n = norm_number(&q.rcvd_exch);
-            if n.is_empty() || !n.chars().all(|c| c.is_ascii_digit()) {
+            let well_formed = match def.number_list {
+                // Codes not on the list don't count; with no list loaded, take any code.
+                Some(_) => n.chars().all(|c| c.is_ascii_alphanumeric()) && def.number_valid(&n) != Some(false),
+                None => n.chars().all(|c| c.is_ascii_digit()),
+            };
+            if n.is_empty() || !well_formed {
                 return None;
             }
             if m.not_own && n == norm_number(&setup.sent_number) {
@@ -326,7 +351,7 @@ fn mult_value(def: &ContestDef, setup: &LogSetup, q: &Qso, prefix: &str) -> Opti
     (!excluded).then_some(value)
 }
 
-fn mult_key(def: &ContestDef, q: &Qso, value: &str, block: i64) -> Option<String> {
+fn mult_key(def: &ContestDef, setup: &LogSetup, q: &Qso, value: &str, block: i64) -> Option<String> {
     let m = def.multiplier.as_ref()?;
     let mut key = value.to_string();
     for dim in &m.per {
@@ -336,6 +361,10 @@ fn mult_key(def: &ContestDef, q: &Qso, value: &str, block: i64) -> Option<String
             Dim::Mode => key.push_str(&def.mode_group(&q.mode)),
             Dim::Block => key.push_str(&block.to_string()),
         }
+    }
+    // A rover counts each multiplier again from each area it operates in.
+    if def.is_rover(setup) {
+        key.push_str(&format!("|from {}", norm_number(&q.sent_exch)));
     }
     Some(key)
 }
@@ -357,6 +386,9 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
     let mut invalid_count = 0;
     let mut by_band: BTreeMap<String, u32> = BTreeMap::new();
     let bonuses = applied_bonuses(def, setup);
+    let rover_wait = def.rover.as_ref().filter(|_| def.is_rover(setup)).map(|r| r.move_minutes);
+    // The rover's last contact: when, and from which area.
+    let mut last_from: Option<(DateTime<Utc>, String)> = None;
 
     for i in order {
         let q = &qsos[i];
@@ -374,9 +406,23 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
             continue;
         }
         r.warning = exchange_warning(def, setup, q);
+        if let Some(wait) = rover_wait {
+            let from = norm_number(&q.sent_exch);
+            if let Some((t, prev)) = &last_from
+                && *prev != from
+                && q.time < *t + Duration::minutes(wait)
+            {
+                let moved = format!("ess than {wait} minutes after the last contact from {prev}");
+                r.warning = Some(match r.warning.take() {
+                    Some(w) => format!("{w}, l{moved}"),
+                    None => format!("L{moved}"),
+                });
+            }
+            last_from = Some((q.time, from));
+        }
 
         if def.rework.kind != ReworkKind::Off {
-            let key = dupe_key(def, q, block);
+            let key = dupe_key(def, setup, q, block);
             match def.rework.kind {
                 ReworkKind::Never => r.dupe = last_worked.contains_key(&key),
                 ReworkKind::Block => {
@@ -425,7 +471,7 @@ pub fn evaluate(def: &ContestDef, setup: &LogSetup, qsos: &[Qso]) -> Evaluation 
         let block_tally = tally.blocks.entry(block).or_default();
         block_tally.0 += r.points;
         if let Some(value) = mult_value(def, setup, q, &prefix)
-            && let Some(mk) = mult_key(def, q, &value, block)
+            && let Some(mk) = mult_key(def, setup, q, &value, block)
         {
             block_tally.1.insert(mk.clone());
             r.new_mult = tally.mults.insert(mk);

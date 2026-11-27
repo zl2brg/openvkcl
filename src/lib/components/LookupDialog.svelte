@@ -3,7 +3,7 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Modal from "./Modal.svelte";
-  import { api, dateTimeText, errorText, zoneLabel, type ClusterConfig, type CtyStatus, type QrzConfig, type ScpStatus } from "$lib/api";
+  import { api, dateTimeText, errorText, zoneLabel, type ClusterConfig, type CodeListStatus, type CtyStatus, type QrzConfig, type ScpStatus } from "$lib/api";
 
   let {
     initial,
@@ -11,6 +11,7 @@
     stationCall,
     onsave,
     onctychange,
+    oncodeschange,
     onclose,
   }: {
     initial: QrzConfig;
@@ -20,6 +21,8 @@
     onsave: (qrz: QrzConfig, cluster: ClusterConfig) => void;
     /** A new country file was loaded. */
     onctychange?: () => void;
+    /** A new code list (e.g. Shire.db3) was loaded. */
+    oncodeschange?: () => void;
     onclose: () => void;
   } = $props();
 
@@ -33,6 +36,9 @@
   let ctyBusy = $state(false);
   let ctyMessage = $state("");
   let ctyError = $state(false);
+  let lists = $state<CodeListStatus[]>([]);
+  let listBusy = $state("");
+  let listMessage = $state<Record<string, { text: string; bad: boolean }>>({});
   let testBusy = $state(false);
   let testMessage = $state("");
   let testError = $state(false);
@@ -41,6 +47,7 @@
     try {
       scp = await api.scpStatus();
       cty = await api.ctyStatus();
+      lists = await api.codeLists();
     } catch (e) {
       scpMessage = errorText(e);
       scpError = true;
@@ -77,6 +84,38 @@
         directory: false,
       });
       return path ? api.ctyImport(path) : null;
+    });
+
+  async function updateList(file: string, action: () => Promise<CodeListStatus[] | null>) {
+    listBusy = file;
+    delete listMessage[file];
+    try {
+      const s = await action();
+      if (s) {
+        lists = s;
+        const l = s.find((x) => x.file === file);
+        listMessage[file] = { text: `Loaded ${l?.count ?? 0} ${l?.item ?? "code"}s`, bad: false };
+        oncodeschange?.();
+      }
+    } catch (e) {
+      listMessage[file] = { text: errorText(e), bad: true };
+    } finally {
+      listBusy = "";
+    }
+  }
+
+  const downloadList = (file: string) => updateList(file, () => api.codeListDownload(file));
+
+  const importList = (file: string) =>
+    updateList(file, async () => {
+      const ext = file.includes(".") ? file.split(".").pop()! : "";
+      const path = await open({
+        title: `Import ${file}`,
+        filters: ext ? [{ name: file, extensions: [ext] }] : [],
+        multiple: false,
+        directory: false,
+      });
+      return path ? api.codeListImport(file, path) : null;
     });
 
   async function updateScp(action: () => Promise<ScpStatus | null>) {
@@ -184,6 +223,42 @@
         >country-files.com</a
       >, updated every few weeks as DXpeditions come and go.
     </p>
+
+    {#each lists as l (l.file)}
+      <h3>{l.contests.join(", ")} list</h3>
+      <p class="hint">
+        Checks the {l.item} codes received and sent in {l.contests.join(" and ")}, shows which {l.item} each code
+        is, and lists matching {l.item}s as you type a code or place.
+      </p>
+      <p class="status">
+        {#if l.count}
+          <span class="ok">{l.count} {l.item}s</span>
+          {#if l.updated}— updated {dateTimeText(l.updated)} {zoneLabel()}{/if}
+        {:else if l.error}
+          <span class="bad">{l.error}</span>
+        {/if}
+      </p>
+      <div class="row">
+        {#if l.url}
+          <button onclick={() => downloadList(l.file)} disabled={!!listBusy}>
+            {listBusy === l.file ? "Working…" : "Download latest"}
+          </button>
+        {/if}
+        <button onclick={() => importList(l.file)} disabled={!!listBusy}>Import file…</button>
+      </div>
+      {#if listMessage[l.file]}
+        <p class="status" class:bad={listMessage[l.file].bad}>{listMessage[l.file].text}</p>
+      {/if}
+      <p class="hint">
+        {#if l.url}
+          Downloads {l.file} from
+          <a href={l.url} onclick={(e) => link(e, l.url)}>{new URL(l.url).hostname}</a>. Download it again when a new
+          list is published, or import one you've been sent.
+        {:else}
+          Import {l.file} when a new list is published.
+        {/if}
+      </p>
+    {/each}
 
     <h3>QRZ.com</h3>
     <label class="check">

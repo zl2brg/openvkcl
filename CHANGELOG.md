@@ -5,6 +5,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Unreleased
 
+### Added
+
+- **WIA VK Shires** contest: RS(T) plus shire code (VK) or CQ zone (DX), 4-hour
+  repeat slots on each band and mode, and shires and zones as multipliers on
+  each band and mode. Shire codes are checked against the WIA's `Shire.db3`,
+  which downloads at first startup and can be updated or imported under
+  **Lookups…** like the other lookup files. The entry line and setup dialog
+  show which shire a code is, warn about unlisted codes, and list matching
+  shires as you type part of a code or a place name. Rovers change shire with
+  **Moved…** on the entry line, and count multipliers again in each shire.
+- Contest definitions can name a `number_list` file of valid codes, which lets
+  the number field take letters as well as digits.
+
 ### Changed
 
 - The voice keyer is off until you tick **Voice keyer** in the toolbar. The

@@ -1,3 +1,4 @@
+pub mod codes;
 pub mod def;
 pub mod engine;
 
@@ -13,6 +14,7 @@ const BUILTIN: &[(&str, &str)] = &[
     ("wia-ha.toml", include_str!("../../contests/wia-ha.toml")),
     ("wia-jmmfd.toml", include_str!("../../contests/wia-jmmfd.toml")),
     ("wia-vhfuhf.toml", include_str!("../../contests/wia-vhfuhf.toml")),
+    ("wia-vkshires.toml", include_str!("../../contests/wia-vkshires.toml")),
     ("nzart-vhf-dx.toml", include_str!("../../contests/nzart-vhf-dx.toml")),
     ("nzart-vhf-lowband.toml", include_str!("../../contests/nzart-vhf-lowband.toml")),
     ("nzart-vhf-microwave.toml", include_str!("../../contests/nzart-vhf-microwave.toml")),
@@ -30,7 +32,14 @@ pub fn parse(name: &str, text: &str) -> Result<ContestDef, String> {
 
 /// Built-in contests, overridden or extended by `*.toml` files in `user_dir`.
 /// Returns the definitions sorted by name, plus any load errors.
+#[cfg(test)]
 pub fn load_all(user_dir: Option<&Path>) -> (Vec<ContestDef>, Vec<String>) {
+    load_with_lists(user_dir, user_dir)
+}
+
+/// [`load_all`], reading code lists (e.g. `Shire.db3`) from `list_dir`, or failing
+/// that from `user_dir`, where earlier versions kept them.
+pub fn load_with_lists(user_dir: Option<&Path>, list_dir: Option<&Path>) -> (Vec<ContestDef>, Vec<String>) {
     let mut defs = Vec::new();
     let mut errors = Vec::new();
     for (name, text) in BUILTIN {
@@ -57,6 +66,13 @@ pub fn load_all(user_dir: Option<&Path>) -> (Vec<ContestDef>, Vec<String>) {
                 Err(e) => errors.push(e),
             }
         }
+    }
+    // Code lists (e.g. VK Shires) are read afresh each time the contests load. A
+    // missing list isn't a load error: the contest still works, and says what's
+    // missing when it's used.
+    let dirs: Vec<&Path> = list_dir.into_iter().chain(user_dir).collect();
+    for d in &mut defs {
+        codes::attach(d, &dirs);
     }
     defs.sort_by(|a, b| a.name.cmp(&b.name));
     (defs, errors)
@@ -506,5 +522,159 @@ mod tests {
         let km = e.results[0].distance_km.unwrap();
         assert_eq!(e.results[0].points, km.round());
         assert!((km - 15.52).abs() > 0.01, "8-character locators should be used");
+    }
+
+    /// VK Shires, with the WIA's Shire.db3 (a small sample) in the contests folder.
+    fn shires_with_list(name: &str) -> ContestDef {
+        let dir = codes::tests::test_dir(name);
+        codes::tests::write_sample(&dir.join("Shire.db3"));
+        let (defs, errors) = load_all(Some(&dir));
+        assert!(errors.is_empty(), "{errors:?}");
+        defs.into_iter().find(|d| d.id == "wia-vkshires").unwrap()
+    }
+
+    fn shire_qso(id: i64, t: DateTime<Utc>, call: &str, band: &str, mode: &str, exch: &str) -> Qso {
+        let mut q = qso(id, t, call, band, mode);
+        q.rcvd_exch = exch.into();
+        q
+    }
+
+    #[test]
+    fn vk_shires_scoring() {
+        let d = shires_with_list("shires-scoring");
+        assert_eq!(d.number_names.len(), 4);
+        assert!(d.number_list_error.is_none());
+        let start = Utc.with_ymd_and_hms(2026, 6, 6, 0, 0, 0).unwrap();
+        let s = setup("wia-vkshires", start);
+        let m = |min: i64| start + Duration::minutes(min);
+        let qsos = [
+            // Typed in lower case: still shire BU4.
+            shire_qso(1, m(10), "VK4ABC", "40m", "PH", "bu4"),
+            // Same station, band and mode in the same 4-hour slot: dupe.
+            shire_qso(2, m(60), "VK4ABC", "40m", "PH", "BU4"),
+            // CW is a separate contact and a separate multiplier.
+            shire_qso(3, m(65), "VK4ABC", "40m", "CW", "BU4"),
+            // The next slot starts at 04:00: workable again, but not a new multiplier.
+            shire_qso(4, m(245), "VK4ABC", "40m", "PH", "BU4"),
+            // A DX station's CQ zone is a multiplier too.
+            shire_qso(5, m(300), "ZL1AMO", "20m", "PH", "32"),
+            // Not on the list: warned, and not a multiplier.
+            shire_qso(6, m(310), "VK5XYZ", "20m", "PH", "ZZ5"),
+            // Nothing received.
+            shire_qso(7, m(320), "VK2XYZ", "20m", "PH", ""),
+            // 6 m isn't a contest band.
+            shire_qso(8, m(330), "VK2XYZ", "6m", "PH", "AD5"),
+        ];
+        let e = evaluate(&d, &s, &qsos);
+        let r = &e.results;
+        assert!(r[0].new_mult && r[0].warning.is_none());
+        assert_eq!(r[0].mult, "BU4");
+        assert!(r[1].dupe);
+        assert!(r[2].new_mult);
+        assert!(!r[3].dupe && !r[3].new_mult);
+        assert!(r[4].new_mult && r[4].warning.is_none());
+        assert_eq!(r[5].warning.as_deref(), Some("ZZ5 is not a listed shire or a CQ zone"));
+        assert!(!r[5].new_mult && r[5].mult.is_empty());
+        assert_eq!(r[6].warning.as_deref(), Some("Received shire/zone missing"));
+        assert!(r[7].invalid.is_some());
+        // 6 contacts x 3 multipliers (BU4 on 40 m PH and CW, zone 32 on 20 m PH).
+        assert_eq!(e.score.qsos, 6);
+        assert_eq!(e.score.groups[0].mults, 3);
+        assert_eq!(e.score.total, 18.0);
+    }
+
+    #[test]
+    fn vk_shires_rovers() {
+        let d = shires_with_list("shires-rovers");
+        let start = Utc.with_ymd_and_hms(2026, 6, 6, 0, 0, 0).unwrap();
+        let m = |min: i64| start + Duration::minutes(min);
+        let from = |mut q: Qso, shire: &str| {
+            q.sent_exch = shire.into();
+            q
+        };
+
+        // Working a rover: each new shire it's in is a new contact.
+        let s = setup("wia-vkshires", start);
+        let e = evaluate(&d, &s, &[
+            shire_qso(1, m(10), "VK4ROV", "40m", "PH", "BU4"),
+            shire_qso(2, m(40), "VK4ROV", "40m", "PH", "BN4"),
+            shire_qso(3, m(50), "VK4ROV", "40m", "PH", "BN4"),
+        ]);
+        assert!(!e.results[1].dupe && e.results[2].dupe);
+
+        // As a rover: the same shire counts again from each shire you're in, and
+        // the same station can be worked again once you've moved.
+        let mut s = setup("wia-vkshires", start);
+        s.categories.insert("CATEGORY-STATION".into(), "ROVER".into());
+        assert!(d.is_rover(&s));
+        let e = evaluate(&d, &s, &[
+            from(shire_qso(1, m(10), "VK5XYZ", "40m", "PH", "AD5"), "BU4"),
+            from(shire_qso(2, m(12), "VK5XYZ", "40m", "PH", "AD5"), "BU4"),
+            // Moved, but only 3 minutes after the last contact.
+            from(shire_qso(3, m(15), "VK5XYZ", "40m", "PH", "AD5"), "BN4"),
+            from(shire_qso(4, m(30), "VK2ABC", "40m", "PH", "XX0"), "BN4"),
+        ]);
+        let r = &e.results;
+        assert!(r[0].new_mult && r[1].dupe);
+        assert!(!r[2].dupe && r[2].new_mult);
+        assert_eq!(r[2].warning.as_deref(), Some("Less than 5 minutes after the last contact from BU4"));
+        assert!(r[3].warning.is_none());
+        assert_eq!(e.score.groups[0].mults, 3);
+
+        // A fixed station's multipliers count once, whatever it sent.
+        let s = setup("wia-vkshires", start);
+        let e = evaluate(&d, &s, &[
+            from(shire_qso(1, m(10), "VK5XYZ", "40m", "PH", "AD5"), "BU4"),
+            from(shire_qso(2, m(15), "VK5ABC", "40m", "PH", "AD5"), "BN4"),
+        ]);
+        assert!(!e.results[1].new_mult && e.results[1].warning.is_none());
+    }
+
+    #[test]
+    fn vk_shires_meanings() {
+        let d = shires_with_list("shires-meanings");
+        assert_eq!(d.number_meaning(" bu4 ").as_deref(), Some("Bundaberg, Qld"));
+        assert_eq!(d.number_meaning("05").as_deref(), Some("CQ zone 5"));
+        assert_eq!(d.number_meaning("41"), None);
+        assert_eq!(d.number_meaning("0"), None);
+        assert_eq!(d.number_valid("ZZ5"), Some(false));
+        // Other contests' numbers have no list, so nothing is said about them.
+        assert_eq!(def("nzart-sangster").number_meaning("10"), None);
+        assert_eq!(def("nzart-sangster").number_valid("10"), None);
+    }
+
+    #[test]
+    fn vk_shires_without_list() {
+        let dir = codes::tests::test_dir("shires-no-list");
+        let (defs, errors) = load_all(Some(&dir));
+        assert!(errors.is_empty(), "a missing list isn't a load error: {errors:?}");
+        let d = defs.into_iter().find(|d| d.id == "wia-vkshires").unwrap();
+        let why = d.number_list_error.clone().unwrap();
+        assert!(why.contains("Shire.db3 not found") && why.contains("Lookups"), "{why}");
+        // Without the list, codes can't be checked: any code counts, nothing is warned.
+        let start = Utc.with_ymd_and_hms(2026, 6, 6, 0, 0, 0).unwrap();
+        let s = setup("wia-vkshires", start);
+        let e = evaluate(&d, &s, &[shire_qso(1, start, "VK5XYZ", "20m", "PH", "zz5")]);
+        assert!(e.results[0].new_mult && e.results[0].warning.is_none());
+        assert_eq!(e.results[0].mult, "ZZ5");
+    }
+
+    #[test]
+    fn vk_shires_list_replaced() {
+        // The list is read again each time the contests load, so a new file is picked up.
+        let dir = codes::tests::test_dir("shires-replaced");
+        let path = dir.join("Shire.db3");
+        codes::tests::write_sample(&path);
+        let shires = |dir: &Path| load_all(Some(dir)).0.into_iter().find(|d| d.id == "wia-vkshires").unwrap();
+        assert_eq!(shires(&dir).number_valid("NEW9"), Some(false));
+        rusqlite::Connection::open(&path)
+            .unwrap()
+            .execute(
+                "INSERT INTO shireTbl (shire_stateName, shire_shireName, shire_shireCode)
+                 VALUES ('Qld', 'Newtown', 'NE4')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(shires(&dir).number_meaning("NE4").as_deref(), Some("Newtown, Qld"));
     }
 }

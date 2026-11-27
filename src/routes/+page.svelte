@@ -34,6 +34,7 @@
   import LogTable from "$lib/components/LogTable.svelte";
   import ScorePanel from "$lib/components/ScorePanel.svelte";
   import SetupDialog from "$lib/components/SetupDialog.svelte";
+  import MoveDialog from "$lib/components/MoveDialog.svelte";
   import RigDialog from "$lib/components/RigDialog.svelte";
   import KeyerDialog from "$lib/components/KeyerDialog.svelte";
   import EditQsoDialog from "$lib/components/EditQsoDialog.svelte";
@@ -65,6 +66,7 @@
   let check = $state<CheckResult | null>(null);
 
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
+  let moveDialog = $state(false);
   let rigDialog = $state(false);
   let keyerDialog = $state(false);
   /** The voice keyer is optional and off until ticked. Remembered on this computer. */
@@ -150,6 +152,13 @@
     };
   });
 
+  /** Pick up contests' code lists after one is downloaded or imported. */
+  async function reloadContests() {
+    const list = await api.listContests();
+    contests = list.contests;
+    contestErrors = list.errors;
+  }
+
   /** Lookup files older than this are downloaded again at startup. */
   const LOOKUP_MAX_AGE_MS = 7 * 24 * 3_600_000;
 
@@ -175,7 +184,19 @@
       update("country file", api.ctyStatus, api.ctyDownload),
       update("MASTER.SCP", api.scpStatus, api.scpDownload),
     ]);
-    if (done.includes("country file")) {
+    // Code lists (e.g. the VK Shires list) change about once a year: only fetch missing ones.
+    const lists = await api.codeLists().catch(() => []);
+    for (const l of lists.filter((l) => !l.count && l.url)) {
+      try {
+        await api.codeListDownload(l.file);
+        done.push(`${l.contests.join(", ")} list`);
+      } catch {
+        failed.push(`${l.contests.join(", ")} list`);
+      }
+    }
+    const newList = done.some((d) => d.endsWith(" list"));
+    if (newList) await reloadContests();
+    if (done.includes("country file") || newList) {
       const v = await api.getLog().catch(() => null);
       if (v) setView(v);
     }
@@ -247,6 +268,19 @@
     try {
       setView(await api.updateSetup(setup));
       setupDialog = null;
+      refocus();
+    } catch (e) {
+      say(errorText(e), true);
+    }
+  }
+
+  /** A rover has moved: send the new code (e.g. shire) from the next contact on. */
+  async function moveTo(code: string) {
+    if (!view) return;
+    try {
+      setView(await api.updateSetup({ ...view.setup, sent_number: code }));
+      moveDialog = false;
+      say(`Now sending ${code}`);
       refocus();
     } catch (e) {
       say(errorText(e), true);
@@ -477,7 +511,7 @@
         >Voice keyer…</button
       >
     {/if}
-    <button onclick={() => (lookupDialog = true)} title="Super Check Partial and QRZ.com">Lookups…</button>
+    <button onclick={() => (lookupDialog = true)} title="Super Check Partial, country file, contest lists, QRZ.com and DX cluster">Lookups…</button>
     <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
       <span class="notice" class:error={noticeIsError}>{notice}</span>
@@ -499,6 +533,7 @@
           keyer={showKeyer ? (settings?.keyer ?? null) : null}
           onkeyerchange={saveKeyer}
           onlog={logQso}
+          onmove={() => (moveDialog = true)}
         />
         <div class="table">
           <LogTable
@@ -542,6 +577,18 @@
     </section>
   {/if}
 </div>
+
+{#if moveDialog && view}
+  <MoveDialog
+    contest={view.contest}
+    current={view.setup.sent_number}
+    onsave={moveTo}
+    onclose={() => {
+      moveDialog = false;
+      refocus();
+    }}
+  />
+{/if}
 
 {#if setupDialog}
   <SetupDialog
@@ -598,6 +645,11 @@
     stationCall={settings.station.callsign}
     onsave={saveLookups}
     onctychange={async () => {
+      const v = await api.getLog();
+      if (v) setView(v);
+    }}
+    oncodeschange={async () => {
+      await reloadContests();
       const v = await api.getLog();
       if (v) setView(v);
     }}

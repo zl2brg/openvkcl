@@ -5,8 +5,10 @@
   import {
     api,
     applyChange,
+    emptyMulti,
     emptyStation,
     errorText,
+    fillView,
     formatFreq,
     pad,
     dayBound,
@@ -14,14 +16,19 @@
     RIG_STATUS_EVENT,
     CLUSTER_SPOT_EVENT,
     CLUSTER_STATUS_EVENT,
+    MULTI_VIEW_EVENT,
+    MULTI_STATUS_EVENT,
+    MULTI_STATIONS_EVENT,
+    MULTI_NOTICE_EVENT,
     type CheckResult,
+    type MultiStatus,
+    type ShareStation,
     type ContestDef,
     type DateRange,
     type LogSetup,
     type LogView,
     type Qso,
     type QsoInput,
-    type KeyerConfig,
     type QrzConfig,
     type QsoRow,
     type RigStatus,
@@ -36,7 +43,6 @@
   import SetupDialog from "$lib/components/SetupDialog.svelte";
   import MoveDialog from "$lib/components/MoveDialog.svelte";
   import RigDialog from "$lib/components/RigDialog.svelte";
-  import KeyerDialog from "$lib/components/KeyerDialog.svelte";
   import EditQsoDialog from "$lib/components/EditQsoDialog.svelte";
   import CabrilloDialog from "$lib/components/CabrilloDialog.svelte";
   import AboutDialog from "$lib/components/AboutDialog.svelte";
@@ -44,6 +50,7 @@
   import LookupDialog from "$lib/components/LookupDialog.svelte";
   import AdifDialog from "$lib/components/AdifDialog.svelte";
   import Clock from "$lib/components/Clock.svelte";
+  import JoinDialog from "$lib/components/JoinDialog.svelte";
 
   const LOG_FILTER = [{ name: "OpenVKCL log", extensions: ["ovkcl"] }];
 
@@ -68,24 +75,31 @@
   let setupDialog = $state<{ initial: LogSetup; isNew: boolean } | null>(null);
   let moveDialog = $state(false);
   let rigDialog = $state(false);
-  let keyerDialog = $state(false);
-  /** The voice keyer is optional and off until ticked. Remembered on this computer. */
-  let showKeyer = $state(localStorage.getItem("voiceKeyer") === "1");
-  $effect(() => {
-    localStorage.setItem("voiceKeyer", showKeyer ? "1" : "0");
-    if (!showKeyer) keyerDialog = false;
-  });
   let aboutDialog = $state(false);
   let lookupDialog = $state(false);
   let editRow = $state<QsoRow | null>(null);
   let cabrillo = $state<string | null>(null);
   let adifDialog = $state<{ kind: "import" | "export"; file?: string } | null>(null);
+  let joinDialog = $state(false);
+  let share = $state<MultiStatus>(emptyMulti());
+  let shareStations = $state<ShareStation[]>([]);
   /** Dates the log is shown between, in general logs. */
   let range = $state<DateRange>({ from: "", to: "" });
 
   let entry: EntryLine | undefined = $state();
 
   let worked = $derived(new Set(view?.qsos.map((q) => q.call) ?? []));
+  let guest = $derived(share.role === "client" || share.role === "scoreboard");
+  let roleName = $derived(
+    share.role === "host" ? "Host" : share.role === "client" ? "Client" : share.role === "scoreboard" ? "Scoreboard" : "",
+  );
+  let blockedBands = $derived(
+    share.role === "client"
+      ? share.stations.filter((s) => s.band && s.client !== share.client).map((s) => s.band)
+      : share.role === "host"
+        ? share.taken
+        : [],
+  );
   let general = $derived(!!view?.contest.general);
   let rangeRows = $derived.by(() => {
     if (!view || !general) return [];
@@ -96,6 +110,12 @@
   function say(text: string, isError = false) {
     notice = text;
     noticeIsError = isError;
+  }
+
+  function onStatus(s: MultiStatus) {
+    if (s.stations.length) shareStations = s.stations;
+    if (s.role === "off") shareStations = [];
+    share = { ...s, stations: s.stations.length ? s.stations : shareStations };
   }
 
   function setView(v: LogView) {
@@ -119,6 +139,17 @@
       spots = [...kept.slice(-(KEEP_SPOTS - 1)), e.payload];
     });
     const unlistenCluster = listen<ClusterStatus>(CLUSTER_STATUS_EVENT, (e) => (clusterStatus = e.payload));
+    const unlistenShare = listen<MultiStatus>(MULTI_STATUS_EVENT, (e) => onStatus(e.payload));
+    const unlistenView = listen<{ view: LogView; stations: ShareStation[] }>(MULTI_VIEW_EVENT, (e) => {
+      shareStations = e.payload.stations ?? [];
+      share = { ...share, stations: shareStations };
+      setView(fillView(e.payload.view));
+    });
+    const unlistenStations = listen<ShareStation[]>(MULTI_STATIONS_EVENT, (e) => {
+      shareStations = e.payload ?? [];
+      share = { ...share, stations: shareStations };
+    });
+    const unlistenNotice = listen<{ text: string; error: boolean }>(MULTI_NOTICE_EVENT, (e) => say(e.payload.text, e.payload.error));
     (async () => {
       try {
         const list = await api.listContests();
@@ -129,16 +160,11 @@
         rig = await api.rigStatus();
         clusterStatus = await api.clusterStatus();
         spots = await api.clusterSpots();
+        onStatus(await api.multiStatus());
+        // A log already open in this process (the window reloaded) comes back.
+        // A saved last log stays on the startup screen until it is chosen.
         const current = await api.getLog();
-        if (current) {
-          setView(current);
-        } else if (settings.last_log) {
-          try {
-            setView(await api.openLog(settings.last_log));
-          } catch {
-            // The last log may have been moved or deleted; start with no log open.
-          }
-        }
+        if (current) setView(current);
         refocus();
       } catch (e) {
         say(errorText(e), true);
@@ -149,6 +175,10 @@
       unlisten.then((f) => f());
       unlistenSpots.then((f) => f());
       unlistenCluster.then((f) => f());
+      unlistenShare.then((f) => f());
+      unlistenView.then((f) => f());
+      unlistenStations.then((f) => f());
+      unlistenNotice.then((f) => f());
     };
   });
 
@@ -287,6 +317,21 @@
     }
   }
 
+  function fileTitle(path: string) {
+    const name = path.split(/[/\\]/).pop() ?? path;
+    return name.replace(/\.ovkcl$/i, "");
+  }
+
+  async function continueLast() {
+    if (!settings?.last_log) return;
+    try {
+      setView(await api.openLog(settings.last_log));
+      refocus();
+    } catch (e) {
+      say(errorText(e), true);
+    }
+  }
+
   async function openLog() {
     const path = await open({ title: "Open log", filters: LOG_FILTER, multiple: false, directory: false });
     if (!path) return;
@@ -301,6 +346,10 @@
 
   async function logQso(input: QsoInput) {
     const logged = await api.logQso(input);
+    if (logged.kind === "queued") {
+      say("Held on this PC until the host is back");
+      return;
+    }
     if (logged.kind === "view") {
       setView(logged.view);
     } else if (view) {
@@ -309,9 +358,31 @@
     }
   }
 
+  async function claimBand(band: string) {
+    await api.multiClaimBand(band);
+  }
+
+  function otherBand(row: QsoRow): boolean {
+    if (share.role === "scoreboard") {
+      say("A scoreboard cannot change the log", true);
+      return true;
+    }
+    if (share.role === "client" && row.band !== share.band) {
+      say("A station can only change contacts on its own band", true);
+      return true;
+    }
+    return false;
+  }
+
   async function saveQso(qso: Qso) {
     try {
       const change = await api.updateQso(qso);
+      if (change.kind === "queued") {
+        say("Held on this PC until the host is back");
+        editRow = null;
+        refocus();
+        return;
+      }
       if (view) setView(applyChange(view, change));
       editRow = null;
       refocus();
@@ -323,6 +394,12 @@
   async function deleteQso(id: number) {
     try {
       const change = await api.deleteQso(id);
+      if (change.kind === "queued") {
+        say("Held on this PC until the host is back");
+        editRow = null;
+        refocus();
+        return;
+      }
       if (view) setView(applyChange(view, change));
       editRow = null;
       refocus();
@@ -423,15 +500,25 @@
     }
   }
 
-  /** Save the voice keyer settings: from its dialog, a new recording or the repeat time. */
-  async function saveKeyer(keyer: KeyerConfig) {
-    if (!settings) return;
-    try {
-      settings.keyer = keyer;
-      await api.saveSettings($state.snapshot(settings) as Settings);
-    } catch (e) {
-      say(errorText(e), true);
-    }
+  async function joinShared(addr: string, operator: string, band: string) {
+    await api.multiJoin(addr, operator, band);
+    joinDialog = false;
+    onStatus(await api.multiStatus());
+    say(band ? `Joined ${addr} on ${band}` : `Watching ${addr}`);
+    refocus();
+  }
+
+  async function leaveShared() {
+    await api.multiLeave();
+    view = null;
+    share = emptyMulti();
+    shareStations = [];
+    say("Left the shared log");
+  }
+
+  async function discardHeld() {
+    await api.multiDiscard();
+    share = { ...share, queued: 0, queue_host: "" };
   }
 
   async function connectRig(config: Settings["rig"]) {
@@ -453,6 +540,9 @@
       {#if view}
         <span>{view.contest.name}</span>
         <span class="mono call">{view.setup.station.callsign}</span>
+      {/if}
+      {#if roleName}
+        <span class="role {share.role}">{roleName}{#if share.role !== "scoreboard" && share.band} · {share.band}{/if}</span>
       {/if}
     </div>
     <div class="rig" class:on={rig.connected}>
@@ -487,14 +577,19 @@
   </header>
 
   <nav>
-    <button onclick={() => (setupDialog = { initial: newLogSetup(), isNew: true })} disabled={!contests.length}>New log</button>
-    <button onclick={openLog}>Open log</button>
-    <button onclick={() => view && (setupDialog = { initial: view.setup, isNew: false })} disabled={!view}>Setup</button>
+    <button onclick={() => (setupDialog = { initial: newLogSetup(), isNew: true })} disabled={!contests.length || guest}>New log</button>
+    <button onclick={openLog} disabled={guest}>Open log</button>
+    {#if guest}
+      <button onclick={leaveShared}>Leave</button>
+    {:else}
+      <button onclick={() => (joinDialog = true)} disabled={!!view}>Join shared log</button>
+    {/if}
+    <button onclick={() => view && (setupDialog = { initial: view.setup, isNew: false })} disabled={!view || guest}>Setup</button>
     <span class="sep"></span>
     {#if !general}
       <button onclick={showCabrillo} disabled={!view}>Cabrillo…</button>
     {/if}
-    <button onclick={chooseAdifImport} disabled={!view} title="Add contacts from an ADIF file to this log">Import ADIF…</button>
+    <button onclick={chooseAdifImport} disabled={!view || guest} title="Add contacts from an ADIF file to this log">Import ADIF…</button>
     <button onclick={() => (adifDialog = { kind: "export" })} disabled={!view}>Export ADIF…</button>
     {#if !general}
       <button onclick={exportScoreSheet} disabled={!view} title="Per-band sheet with distance and points for each contact">
@@ -503,14 +598,6 @@
     {/if}
     <span class="sep"></span>
     <button onclick={() => (rigDialog = true)}>Radio…</button>
-    <label class="check" title="Show the F-key voice messages and the Voice keyer settings. Off, the F-keys do nothing.">
-      <input type="checkbox" bind:checked={showKeyer} /> Voice keyer
-    </label>
-    {#if showKeyer}
-      <button onclick={() => (keyerDialog = true)} disabled={!settings} title="F-key voice messages and CQ repeat"
-        >Voice keyer…</button
-      >
-    {/if}
     <button onclick={() => (lookupDialog = true)} title="Super Check Partial, country file, contest lists, QRZ.com and DX cluster">Lookups…</button>
     <button onclick={() => (aboutDialog = true)}>About</button>
     {#if notice}
@@ -518,31 +605,58 @@
     {/if}
   </nav>
 
+  <div class="stage">
+  {#if share.role !== "off"}
+    <div class="share">
+      <span class="role {share.role}">{roleName}</span>
+      {#if share.role === "host"}
+        <span>Sharing {share.address || "this log"}</span>
+        {#each share.stations as s (`${s.host ? "host" : s.client}:${s.band}`)}
+          <span class:away={!s.connected} class:mine={s.host}>{s.host ? "Host" : s.operator} · {s.band || "scoreboard"}{s.connected ? "" : " · away"}</span>
+        {/each}
+      {:else}
+        <span class="mono mine">{share.operator}{#if share.role !== "scoreboard"} · {share.band}{/if}</span>
+        <span>{share.connected ? `Connected to ${share.address}` : "Host offline, contacts are held here"}</span>
+        {#if share.queued}<span>{share.queued} held</span>{/if}
+      {/if}
+      {#if share.error}<span class="error">{share.error}</span>{/if}
+    </div>
+  {/if}
+
   {#if view}
     <main>
       <div class="left">
-        <EntryLine
-          bind:this={entry}
-          bind:check
-          contest={view.contest}
-          setup={view.setup}
-          {rig}
-          {logVersion}
-          {worked}
-          qrzEnabled={!!settings?.qrz.enabled}
-          keyer={showKeyer ? (settings?.keyer ?? null) : null}
-          onkeyerchange={saveKeyer}
-          onlog={logQso}
-          onmove={() => (moveDialog = true)}
-        />
+        {#if share.role === "scoreboard"}
+          <p class="scoreboard">Scoreboard. This PC is watching the log.</p>
+        {:else}
+          <EntryLine
+            bind:this={entry}
+            bind:check
+            contest={view.contest}
+            setup={view.setup}
+            {rig}
+            {logVersion}
+            {worked}
+            {blockedBands}
+            bandLock={share.role === "client" ? share.band : ""}
+            onband={share.role === "host" || share.role === "client" ? claimBand : undefined}
+            qrzEnabled={!!settings?.qrz.enabled}
+            onlog={logQso}
+            onmove={() => (moveDialog = true)}
+          />
+        {/if}
         <div class="table">
           <LogTable
             rows={view.qsos}
             contest={view.contest}
             highlight={check?.previous[0]?.call ?? ""}
             bind:range
-            onedit={(r) => (editRow = r)}
-            ondelete={(r) => deleteQso(r.id)}
+            onedit={(r) => {
+              if (!otherBand(r)) editRow = r;
+            }}
+            ondelete={(r) => {
+              if (!otherBand(r)) deleteQso(r.id);
+            }}
             ondone={refocus}
           />
         </div>
@@ -562,20 +676,28 @@
       <h1>OpenVKCL</h1>
       <p>A contest logger for Australian and New Zealand contests.</p>
       <div class="actions">
-        <button class="primary" onclick={() => (setupDialog = { initial: newLogSetup(), isNew: true })} disabled={!contests.length}>
+        {#if settings?.last_log}
+          <button class="primary" onclick={continueLast} title={settings.last_log}>
+            Continue {fileTitle(settings.last_log)}
+          </button>
+        {/if}
+        <button
+          class:primary={!settings?.last_log}
+          onclick={() => (setupDialog = { initial: newLogSetup(), isNew: true })}
+          disabled={!contests.length}
+        >
           Start a new log
         </button>
         <button onclick={openLog}>Open an existing log</button>
+        <button onclick={() => (joinDialog = true)}>Join a shared log</button>
       </div>
-      {#if contests.length}
-        <p class="muted">Contests: {contests.map((c) => c.name).join(" · ")}</p>
-      {/if}
       {#each contestErrors as err}
         <p class="error">{err}</p>
       {/each}
       {#if version}<p class="muted">Version {version}</p>{/if}
     </section>
   {/if}
+  </div>
 </div>
 
 {#if moveDialog && view}
@@ -585,6 +707,21 @@
     onsave={moveTo}
     onclose={() => {
       moveDialog = false;
+      refocus();
+    }}
+  />
+{/if}
+
+{#if joinDialog}
+  <JoinDialog
+    client={share.client}
+    defaultOperator={settings?.station.callsign ?? ""}
+    queued={share.queued}
+    queueHost={share.queue_host}
+    onjoin={joinShared}
+    ondiscard={discardHeld}
+    onclose={() => {
+      joinDialog = false;
       refocus();
     }}
   />
@@ -608,19 +745,6 @@
     {version}
     onclose={() => {
       aboutDialog = false;
-      refocus();
-    }}
-  />
-{/if}
-
-{#if keyerDialog && settings}
-  <KeyerDialog
-    initial={settings.keyer}
-    radioConnected={rig.connected}
-    tci={settings.rig.kind === "tci"}
-    onsave={saveKeyer}
-    onclose={() => {
-      keyerDialog = false;
       refocus();
     }}
   />
@@ -727,6 +851,31 @@
     font-weight: 700;
     color: var(--accent);
   }
+  .role {
+    align-self: center;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .role.host {
+    color: var(--ok);
+    border-color: color-mix(in srgb, var(--ok) 55%, var(--border));
+    background: color-mix(in srgb, var(--ok) 16%, transparent);
+  }
+  .role.client {
+    color: var(--accent);
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+  }
+  .role.scoreboard {
+    color: var(--warn);
+    border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+    background: color-mix(in srgb, var(--warn) 16%, transparent);
+  }
   .rig {
     display: flex;
     gap: 8px;
@@ -766,13 +915,6 @@
     background: var(--border);
     margin: 0 4px;
   }
-  nav .check {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 0.9rem;
-    margin-left: 4px;
-  }
   .notice {
     margin-left: auto;
     font-size: 0.85rem;
@@ -802,6 +944,37 @@
   .table {
     flex: 1;
     min-height: 0;
+  }
+  .stage {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .stage main,
+  .stage .welcome {
+    flex: 1;
+    min-height: 0;
+  }
+  .share {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    padding: 6px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+  .share .away {
+    opacity: 0.7;
+  }
+  .share .mine {
+    color: var(--fg);
+    font-weight: 600;
+  }
+  .scoreboard {
+    margin: 0;
+    color: var(--muted);
   }
   .welcome {
     display: flex;

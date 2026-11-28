@@ -2,7 +2,6 @@
   import { untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import BandGrid from "./BandGrid.svelte";
-  import KeyerBar from "./KeyerBar.svelte";
   import CodeSuggest from "./CodeSuggest.svelte";
   import {
     api,
@@ -19,7 +18,6 @@
     zoneLabel,
     type CheckResult,
     type ContestDef,
-    type KeyerConfig,
     type Need,
     type LogSetup,
     type QrzInfo,
@@ -36,10 +34,11 @@
     logVersion,
     worked,
     qrzEnabled,
-    keyer,
-    onkeyerchange,
     onlog,
     onmove,
+    blockedBands = [],
+    bandLock = "",
+    onband,
     check = $bindable(null),
   }: {
     contest: ContestDef;
@@ -50,12 +49,15 @@
     /** Calls already in the log, highlighted in the Super Check Partial list. */
     worked: Set<string>;
     qrzEnabled: boolean;
-    /** Voice keyer settings, for the F-key bar; none until settings load. */
-    keyer: KeyerConfig | null;
-    onkeyerchange: (config: KeyerConfig) => void;
     onlog: (input: QsoInput) => Promise<void>;
     /** A rover has moved: choose the code it sends from now on. */
     onmove: () => void;
+    /** Bands another station already holds. */
+    blockedBands?: string[];
+    /** The band this PC joined on. Empty on a log opened here. */
+    bandLock?: string;
+    /** Tell the host this PC is using `band`. A rejection puts the previous band back. */
+    onband?: (band: string) => Promise<void>;
     check?: CheckResult | null;
   } = $props();
 
@@ -105,15 +107,40 @@
   // Band and mode follow the radio only while it reports a frequency.
   let rigDriven = $derived(followRig && rig.connected && rig.freq_hz != null);
 
+  let sentBand = "";
+  let appliedLock = "";
+
   $effect(() => {
-    // General logs list every band from 2190m up; start on 20m rather than the first.
-    if (!contest.bands.includes(band)) band = contest.general && contest.bands.includes("20m") ? "20m" : contest.bands[0];
+    const lock = bandLock;
+    if (lock && contest.bands.includes(lock) && lock !== untrack(() => appliedLock)) {
+      appliedLock = lock;
+      band = lock;
+    } else if (!contest.bands.includes(untrack(() => band))) {
+      // General logs list every band from 2190m up; start on 20m rather than the first.
+      band = contest.general && contest.bands.includes("20m") ? "20m" : contest.bands[0];
+    }
     if (!contest.modes.includes(mode)) mode = contest.modes[0];
+  });
+
+  // Claiming follows the band actually shown, including the one chosen at start.
+  $effect(() => {
+    const current = band;
+    if (!onband || !current || current === untrack(() => sentBand)) return;
+    const previous = untrack(() => sentBand);
+    sentBand = current;
+    onband(current).catch((e) => {
+      error = errorText(e);
+      if (previous) {
+        sentBand = previous;
+        band = previous;
+      }
+    });
   });
 
   $effect(() => {
     if (!rigDriven) return;
-    if (rig.band && contest.bands.includes(rig.band)) band = rig.band;
+    const blocked = blockedBands;
+    if (rig.band && contest.bands.includes(rig.band) && !blocked.includes(rig.band)) band = rig.band;
     if (general) {
       const m = rig.rig_mode ? generalMode(rig.rig_mode, untrack(() => mode)) : null;
       if (m && contest.modes.includes(m)) mode = m;
@@ -378,7 +405,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<div class="entry" class:steady={!!keyer} role="group" aria-label="QSO entry" {onkeydown}>
+<div class="entry" role="group" aria-label="QSO entry" {onkeydown}>
   <div class="controls">
     <label>
       Band
@@ -392,7 +419,7 @@
           else band = e.currentTarget.value;
         }}
       >
-        {#each contest.bands as b (b)}<option value={b}>{b}</option>{/each}
+        {#each contest.bands as b (b)}<option value={b} disabled={blockedBands.includes(b) && b !== band}>{b}</option>{/each}
       </select>
     </label>
     <label>
@@ -630,16 +657,6 @@
     {/if}
   </div>
 
-  {#if keyer}
-    <KeyerBar
-      config={keyer}
-      phone={modeClass(mode) === "PH"}
-      call={callKey}
-      freqHz={rig.connected ? rig.freq_hz : null}
-      onchange={onkeyerchange}
-    />
-  {/if}
-
   {#if callKey && scp && !scp.exact && (scp.partial.length || scp.near.length)}
     <div class="scp mono" aria-label="Super Check Partial">
       {#each scp.partial as c (c)}
@@ -785,11 +802,6 @@
     gap: 12px;
     align-items: center;
     font-size: 0.95rem;
-  }
-  .entry.steady .status {
-    height: 1.4rem;
-    white-space: nowrap;
-    overflow: hidden;
   }
   .strong {
     font-weight: 700;

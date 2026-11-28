@@ -259,22 +259,24 @@ export function fillRow(r: Partial<QsoRow>): QsoRow {
   return { ...ROW_DEFAULTS, ...RESULT_DEFAULTS, ...r } as QsoRow;
 }
 
-function fillView(v: LogView): LogView {
+export function fillView(v: LogView): LogView {
   return { ...v, qsos: v.qsos.map(fillRow) };
 }
 
-/** Logging a contact: the new row to add at the end, or the whole log. */
-export type Logged = { kind: "row"; row: QsoRow } | { kind: "view"; view: LogView };
+/** Logging a contact: the new row, the whole log, or a contact held until the host is back. */
+export type Logged = { kind: "row"; row: QsoRow } | { kind: "view"; view: LogView } | { kind: "queued" };
 
-/** Editing or deleting a contact: the rows that changed (and any removed), or the whole log. */
-export type Changed = { kind: "rows"; rows: QsoRow[]; removed: number | null } | { kind: "view"; view: LogView };
+/** Editing or deleting a contact, or a change held until the host is back. */
+export type Changed = { kind: "rows"; rows: QsoRow[]; removed: number | null } | { kind: "view"; view: LogView } | { kind: "queued" };
 
 function fillChanged(c: Changed): Changed {
+  if (c.kind === "queued") return c;
   return c.kind === "rows" ? { ...c, rows: c.rows.map(fillRow) } : { kind: "view", view: fillView(c.view) };
 }
 
 /** The log with `change` applied: changed rows replaced in place, a deleted one removed. */
 export function applyChange(view: LogView, change: Changed): LogView {
+  if (change.kind === "queued") return view;
   if (change.kind === "view") return change.view;
   const changed = new Map(change.rows.map((r) => [r.id, r]));
   const qsos = view.qsos.filter((q) => q.id !== change.removed).map((q) => changed.get(q.id) ?? q);
@@ -419,52 +421,6 @@ export interface RigStatus {
   error: string | null;
 }
 
-/** A voice keyer message: its label and its .wav file. */
-export interface KeyerMessage {
-  label: string;
-  /** A name in the voice folder, or a full path; empty when not recorded yet. */
-  file: string;
-}
-
-export interface KeyerConfig {
-  /** Sound output that feeds the radio; empty uses the system default. */
-  output: string;
-  /** Microphone to record from; empty uses the system default. */
-  input: string;
-  /** Key the radio through its connection; otherwise rely on its VOX. */
-  ptt: boolean;
-  ptt_delay_ms: number;
-  /** Pause between the end of one CQ and the next when repeating. */
-  repeat_ms: number;
-  /** Run and S&P messages, F1 to F12. */
-  run: KeyerMessage[];
-  sp: KeyerMessage[];
-}
-
-export interface KeyerStatus {
-  playing: string | null;
-  recording: string | null;
-  /** The file that just finished playing on its own, for CQ repeat. */
-  finished: string | null;
-  error: string | null;
-}
-
-export interface KeyerInfo {
-  devices: { outputs: string[]; inputs: string[] };
-  voice_dir: string;
-  status: KeyerStatus;
-}
-
-export type KeySet = "run" | "sp";
-
-/** The file a key records to in the voice folder, e.g. "run-F1.wav". */
-export function recordingName(set: KeySet, key: number): string {
-  return `${set}-F${key + 1}.wav`;
-}
-
-export const KEYER_STATUS_EVENT = "keyer-status";
-export const KEYER_LEVEL_EVENT = "keyer-level";
-
 export interface QrzConfig {
   enabled: boolean;
   username: string;
@@ -498,7 +454,6 @@ export interface ScpMatches {
 export interface Settings {
   station: Station;
   rig: RigConfig;
-  keyer: KeyerConfig;
   qrz: QrzConfig;
   cluster: ClusterConfig;
   last_log: string | null;
@@ -553,9 +508,18 @@ export const api = {
       previous: c.previous.map(fillRow),
     })),
   logQso: (input: QsoInput) =>
-    invoke<Logged>("log_qso", { input }).then(
-      (l): Logged => (l.kind === "row" ? { kind: "row", row: fillRow(l.row) } : { kind: "view", view: fillView(l.view) }),
-    ),
+    invoke<Logged>("log_qso", { input }).then((l): Logged => {
+      if (l.kind === "queued") return { kind: "queued" };
+      return l.kind === "row" ? { kind: "row", row: fillRow(l.row) } : { kind: "view", view: fillView(l.view) };
+    }),
+  multiStatus: () => invoke<MultiStatus>("multi_status"),
+  multiJoin: (addr: string, operator: string, band: string) =>
+    invoke<void>("multi_join", { addr, operator, band }),
+  multiLeave: () => invoke<void>("multi_leave"),
+  multiPeek: (addr: string) => invoke<ShareOffer>("multi_peek", { addr }),
+  multiDiscover: () => invoke<ShareFound[]>("multi_discover"),
+  multiClaimBand: (band: string) => invoke<void>("multi_claim_band", { band }),
+  multiDiscard: () => invoke<void>("multi_discard"),
   updateQso: (qso: Qso) => invoke<Changed>("update_qso", { qso }).then(fillChanged),
   deleteQso: (id: number) => invoke<Changed>("delete_qso", { id }).then(fillChanged),
   cabrilloText: () => invoke<string>("cabrillo_text"),
@@ -576,13 +540,6 @@ export const api = {
   rigConnect: (config: RigConfig) => invoke<void>("rig_connect", { config }),
   rigDisconnect: () => invoke<void>("rig_disconnect"),
   rigStatus: () => invoke<RigStatus>("rig_status"),
-  keyerInfo: () => invoke<KeyerInfo>("keyer_info"),
-  /** Key the radio and play a message file. */
-  keyerPlay: (file: string) => invoke<void>("keyer_play", { file }),
-  /** Stop playing (unkeying the radio) or recording. */
-  keyerStop: () => invoke<void>("keyer_stop"),
-  /** Record from the microphone into a file in the voice folder until stopped. */
-  keyerRecord: (file: string) => invoke<void>("keyer_record", { file }),
   rigModels: () => invoke<RigModel[]>("rig_models"),
   flexDiscover: () => invoke<FlexRadio[]>("flex_discover"),
   serialPorts: () => invoke<SerialPort[]>("serial_ports"),
@@ -600,6 +557,68 @@ export const api = {
 };
 
 export const RIG_STATUS_EVENT = "rig-status";
+export const MULTI_VIEW_EVENT = "multi-view";
+export const MULTI_STATUS_EVENT = "multi-status";
+export const MULTI_STATIONS_EVENT = "multi-stations";
+export const MULTI_NOTICE_EVENT = "multi-notice";
+
+/** A station on a shared log. `host` is the PC that has the file open. */
+export interface ShareStation {
+  operator: string;
+  band: string;
+  connected: boolean;
+  host: boolean;
+  /** Host-assigned number of this copy. Zero on the PC that has the log open. */
+  client: number;
+}
+
+/** What a joining PC hears from the open log before it claims a band. */
+export interface ShareOffer {
+  contest: string;
+  call: string;
+  bands: string[];
+  stations: ShareStation[];
+}
+
+/** A log found by the UDP beacon. `addr` is `host:port`. */
+export interface ShareFound {
+  addr: string;
+  contest: string;
+  call: string;
+}
+
+export interface MultiStatus {
+  role: "off" | "host" | "client" | "scoreboard";
+  connected: boolean;
+  address: string;
+  operator: string;
+  band: string;
+  queued: number;
+  queue_host: string;
+  stations: ShareStation[];
+  taken: string[];
+  error: string;
+  contest: string;
+  /** Host-assigned number. The client's queue is kept under this number. */
+  client: number;
+}
+
+export function emptyMulti(): MultiStatus {
+  return {
+    role: "off",
+    connected: false,
+    address: "",
+    operator: "",
+    band: "",
+    queued: 0,
+    queue_host: "",
+    stations: [],
+    taken: [],
+    error: "",
+    contest: "",
+    client: 0,
+  };
+}
 export const CLUSTER_SPOT_EVENT = "cluster-spot";
 export const CLUSTER_STATUS_EVENT = "cluster-status";
 

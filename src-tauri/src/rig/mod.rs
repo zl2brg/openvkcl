@@ -6,11 +6,10 @@ pub mod tci;
 
 use crate::bands;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::async_runtime::JoinHandle;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 use tauri::{AppHandle, Emitter, Manager};
 
 pub const STATUS_EVENT: &str = "rig-status";
@@ -160,17 +159,6 @@ impl Client {
         }
     }
 
-    /// Key or unkey the transmitter.
-    async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
-        match self {
-            Client::Hamlib(c) => c.set_ptt(on).await,
-            Client::Rigctld(c) => c.set_ptt(on).await,
-            Client::Flrig(c) => c.set_ptt(on).await,
-            Client::Tci(c) => c.send(if on { "trx:0,true;" } else { "trx:0,false;" }).await,
-            Client::Flex(c) => c.set_ptt(on).await,
-        }
-    }
-
     /// Whether the radio pushes changes (TCI, FlexRadio) rather than being polled.
     fn pushes(&self) -> bool {
         matches!(self, Client::Tci(_) | Client::Flex(_))
@@ -179,20 +167,6 @@ impl Client {
     async fn run(&mut self, cmd: Command) -> Result<(), String> {
         match cmd {
             Command::Raw(text) => self.send(&text).await,
-            Command::Ptt(on, done) => {
-                // A refused PTT is the keyer's to report, not a reason to drop the
-                // radio: if the connection itself has gone, the next poll finds out.
-                let _ = done.send(self.set_ptt(on).await);
-                Ok(())
-            }
-            Command::Transmit(audio, stop, done) => {
-                let result = match self {
-                    Client::Tci(c) => c.transmit(&audio, &stop).await,
-                    _ => Err("Only a TCI connection carries transmit audio".into()),
-                };
-                let _ = done.send(result);
-                Ok(())
-            }
         }
     }
 }
@@ -201,15 +175,7 @@ impl Client {
 enum Command {
     /// Text for the radio's control server (TCI and FlexRadio spots).
     Raw(String),
-    /// Key (true) or unkey the transmitter, then say how it went.
-    Ptt(bool, oneshot::Sender<Result<(), String>>),
-    /// Over TCI: key up, send this audio (mono, at the TCI rate) as the transmit
-    /// audio until it ends or the flag is set, unkey, then say how it went.
-    Transmit(Arc<Vec<f32>>, Arc<AtomicBool>, oneshot::Sender<Result<(), String>>),
 }
-
-/// How long a PTT command may take before it's given up on.
-const PTT_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Default)]
 pub struct Rig {
@@ -224,11 +190,17 @@ pub struct Rig {
 }
 
 fn publish(app: &AppHandle, shared: &Mutex<RigStatus>, status: RigStatus) {
-    let mut cur = shared.lock().unwrap();
-    if *cur != status {
+    {
+        let mut cur = shared.lock().unwrap();
+        if *cur == status {
+            return;
+        }
         *cur = status.clone();
-        let _ = app.emit(STATUS_EVENT, status);
     }
+    // Emit after the lock is released. The window asks for this status on the
+    // UI thread; holding the lock across the emit deadlocks that thread and
+    // the clock and buttons stop.
+    let _ = app.emit(STATUS_EVENT, status);
 }
 
 async fn run(
@@ -324,42 +296,6 @@ impl Rig {
         if let Some(tx) = self.outbox.lock().unwrap().as_ref() {
             let _ = tx.send(Command::Raw(cmd));
         }
-    }
-
-    /// Key or unkey the transmitter through the radio connection. Returns
-    /// Ok(false) when no radio is connected, so the radio's VOX has to do it.
-    pub async fn ptt(&self, on: bool) -> Result<bool, String> {
-        if !self.status.lock().unwrap().connected {
-            return Ok(false);
-        }
-        let Some(tx) = self.outbox.lock().unwrap().clone() else {
-            return Ok(false);
-        };
-        let (done, result) = oneshot::channel();
-        tx.send(Command::Ptt(on, done)).map_err(|_| "The radio connection has closed".to_string())?;
-        match tokio::time::timeout(PTT_TIMEOUT, result).await {
-            Ok(Ok(r)) => r.map(|()| true),
-            Ok(Err(_)) => Err("The radio connection closed before PTT".into()),
-            Err(_) => Err("The radio didn't answer the PTT command".into()),
-        }
-    }
-
-    /// Whether voice messages go over the radio connection itself (TCI) rather
-    /// than through a sound device.
-    pub fn carries_audio(&self) -> bool {
-        *self.kind.lock().unwrap() == RigKind::Tci && self.status.lock().unwrap().connected
-    }
-
-    /// Over TCI: key up, send `audio` (mono, at the TCI rate) as the transmit
-    /// audio, and unkey when it ends or `stop` is set.
-    pub async fn transmit(&self, audio: Vec<f32>, stop: Arc<AtomicBool>) -> Result<(), String> {
-        let Some(tx) = self.outbox.lock().unwrap().clone() else {
-            return Err("No radio is connected".into());
-        };
-        let (done, result) = oneshot::channel();
-        tx.send(Command::Transmit(Arc::new(audio), stop, done))
-            .map_err(|_| "The radio connection has closed".to_string())?;
-        result.await.map_err(|_| "The radio connection closed while transmitting".to_string())?
     }
 
     pub fn stop(&self, app: &AppHandle) {

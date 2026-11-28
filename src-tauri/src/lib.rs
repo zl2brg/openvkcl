@@ -7,9 +7,10 @@ mod dxcc;
 mod export;
 mod geo;
 mod import;
-mod keyer;
+mod instance;
 mod model;
 mod modes;
+mod multi;
 mod qrz;
 mod rig;
 mod scp;
@@ -26,12 +27,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
-            let state = AppState::new(&config_dir);
+            let instance = instance::claim(&config_dir);
+            let state = AppState::new(&config_dir, &instance.files_dir);
+            app.manage(instance);
             for e in state.contest_errors.lock().unwrap().iter() {
                 eprintln!("contest definition error: {e}");
             }
             let rig = state.settings.lock().unwrap().rig.clone();
             app.manage(state);
+            commands::watch_sharing(app.handle());
             app.state::<AppState>().rig.start(app.handle().clone(), rig);
             // Log in to QRZ.com now, so the first call typed only waits for its lookup.
             let handle = app.handle().clone();
@@ -68,10 +72,6 @@ pub fn run() {
             commands::rig_connect,
             commands::rig_disconnect,
             commands::rig_status,
-            commands::keyer_info,
-            commands::keyer_play,
-            commands::keyer_stop,
-            commands::keyer_record,
             commands::rig_models,
             commands::flex_discover,
             commands::serial_ports,
@@ -91,13 +91,20 @@ pub fn run() {
             commands::cluster_connect,
             commands::cluster_status,
             commands::cluster_spots,
+            commands::multi_status,
+            commands::multi_join,
+            commands::multi_leave,
+            commands::multi_peek,
+            commands::multi_discover,
+            commands::multi_claim_band,
+            commands::multi_discard,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 let state = app.state::<AppState>();
-                state.keyer.stop();
+                state.multi.shutdown();
                 state.rig.shutdown();
             }
         });

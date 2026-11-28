@@ -45,17 +45,6 @@ impl Client {
             .map_err(|e| e.to_string())
     }
 
-    /// Key or unkey the transmitter.
-    pub async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
-        self.send(if on { "T 1\n" } else { "T 0\n" }).await?;
-        match self.read_line().await {
-            // Set commands answer with RPRT 0 on success, which read_line treats as an error code.
-            Err(e) if e == rprt_text("0") => Ok(()),
-            Err(e) => Err(e),
-            Ok(_) => Ok(()),
-        }
-    }
-
     pub async fn poll(&mut self) -> Result<(u64, String), String> {
         self.send("f\n").await?;
         let freq = self.read_line().await?;

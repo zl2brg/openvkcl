@@ -66,15 +66,6 @@ Changes are listed in [CHANGELOG](CHANGELOG.md).
 - Radio control for any radio Hamlib supports (just pick the model and serial
   port), FLRig, TCI (cudaSDR, ExpertSDR, Thetis) or a FlexRadio over the
   network: band, mode and frequency follow the radio.
-- A voice keyer on F1–F12, as in N1MM, turned on with the **Voice keyer**
-  tick in the toolbar (off until you tick it). It has Run and Search & Pounce
-  sets of recorded messages, played to the radio's sound input with PTT
-  through the radio connection (or its VOX). F1 is CQ, and **Alt+R** repeats
-  it after a pause (**Ctrl+R** sets it) until you type a call or press
-  **Esc**, which also stops transmitting. **Ctrl+Shift+F-key** records a
-  message from the microphone; **Shift+F-key** plays the other set's key and
-  **Alt+U** switches sets. Set the sound devices and messages under
-  **Voice keyer…**, which appears next to the tick.
 - Super Check Partial: matching calls from MASTER.SCP and your log, plus N+1
   (one character different) suggestions, as you type. Download the latest
   MASTER.SCP from **Lookups…** or import your own file. MASTER.SCP and the
@@ -201,7 +192,7 @@ submenu exists (KDE with `extra-xdg-menus`), otherwise under Internet.
 
 How the five distance-scored contests turn a locator pair into points is
 described in [Radial distance scoring](docs/radial-distance-scoring.md).
-A post-v1.0 sketch for several PCs sharing one log is in
+Several PCs can share one log on the LAN. See
 [Multi-station shared logging](docs/multi-station-logging.md).
 The other contests award fixed points.
 

@@ -102,10 +102,6 @@ impl Client {
         Err(error)
     }
 
-    pub async fn set_ptt(&mut self, on: bool) -> Result<(), String> {
-        self.rigctld.set_ptt(on).await
-    }
-
     pub async fn poll(&mut self) -> Result<(u64, String), String> {
         match self.rigctld.poll().await {
             Ok(r) => Ok(r),

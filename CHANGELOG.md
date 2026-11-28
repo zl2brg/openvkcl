@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Several radios can share one log. The PC that opens the file hosts it. Other
+  copies join that log, including a second copy on the same PC with the same
+  callsign, and each copy keeps its own radio and band. A band stays with one
+  station until that station leaves. Contacts logged while the host is
+  unreachable are held and sent when it returns.
 - **WIA VK Shires** contest: RS(T) plus shire code (VK) or CQ zone (DX), 4-hour
   repeat slots on each band and mode, and shires and zones as multipliers on
   each band and mode. Shire codes are checked against the WIA's `Shire.db3`,
@@ -18,10 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Contest definitions can name a `number_list` file of valid codes, which lets
   the number field take letters as well as digits.
 
+### Removed
+
+- The voice keyer: the F1–F12 messages, recording and transmitting through the radio.
+
 ### Changed
 
-- The voice keyer is off until you tick **Voice keyer** in the toolbar. The
-  F-key controls and **Voice keyer…** appear only while it is ticked.
 - In a contest, Space and Tab stop on RST sent before RST received.
 - Phone, CW and RTTY reports can be 59 or 599.
 - A generic contest: name, length, bands and one exchange (none, serial, locator

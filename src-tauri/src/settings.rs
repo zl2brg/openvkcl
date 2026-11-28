@@ -2,7 +2,6 @@ use crate::cluster::ClusterConfig;
 use crate::model::Station;
 use crate::qrz::QrzConfig;
 use crate::rig::RigConfig;
-use crate::keyer::KeyerConfig;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -13,7 +12,6 @@ pub struct Settings {
     /// Station details used to pre-fill new logs.
     pub station: Station,
     pub rig: RigConfig,
-    pub keyer: KeyerConfig,
     pub qrz: QrzConfig,
     pub cluster: ClusterConfig,
     pub last_log: Option<String>,

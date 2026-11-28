@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Several radios can share one log. The PC that opens the file hosts it. Other
+  copies join that log, including a second copy on the same PC with the same
+  callsign, and each copy keeps its own radio and band. A band stays with one
+  station until that station leaves. Contacts logged while the host is
+  unreachable are held and sent when it returns.
 - **WIA VK Shires** contest: RS(T) plus shire code (VK) or CQ zone (DX), 4-hour
   repeat slots on each band and mode, and shires and zones as multipliers on
   each band and mode. Shire codes are checked against the WIA's `Shire.db3`,

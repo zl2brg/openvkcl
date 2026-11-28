@@ -92,6 +92,9 @@ input[type="checkbox"] {
 }
 
 button {
+  /* WebKitGTK otherwise paints the theme button, which turns these grey and drops the click. */
+  appearance: none;
+  -webkit-appearance: none;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -99,7 +102,7 @@ button {
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled):not(.primary) {
   background: var(--hover);
 }
 
@@ -108,13 +111,16 @@ button:disabled {
   cursor: default;
 }
 
-button.primary {
+button.primary,
+button.primary:hover:not(:disabled),
+button.primary:active:not(:disabled) {
   background: var(--primary);
   border-color: var(--primary-border);
   color: white;
 }
 
-button.primary:hover:not(:disabled) {
+button.primary:hover:not(:disabled),
+button.primary:active:not(:disabled) {
   background: var(--primary-hover);
 }
 

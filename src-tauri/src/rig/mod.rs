@@ -190,11 +190,17 @@ pub struct Rig {
 }
 
 fn publish(app: &AppHandle, shared: &Mutex<RigStatus>, status: RigStatus) {
-    let mut cur = shared.lock().unwrap();
-    if *cur != status {
+    {
+        let mut cur = shared.lock().unwrap();
+        if *cur == status {
+            return;
+        }
         *cur = status.clone();
-        let _ = app.emit(STATUS_EVENT, status);
     }
+    // Emit after the lock is released. The window asks for this status on the
+    // UI thread; holding the lock across the emit deadlocks that thread and
+    // the clock and buttons stop.
+    let _ = app.emit(STATUS_EVENT, status);
 }
 
 async fn run(

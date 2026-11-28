@@ -200,11 +200,16 @@ struct Shared {
 
 impl Shared {
     fn publish(&self, status: ClusterStatus) {
-        let mut cur = self.status.lock().unwrap();
-        if *cur != status {
+        {
+            let mut cur = self.status.lock().unwrap();
+            if *cur == status {
+                return;
+            }
             *cur = status.clone();
-            let _ = self.app.emit(STATUS_EVENT, status);
         }
+        // Same as the radio: never emit while this lock is held. The UI thread
+        // reads the status, and the emit can need that thread before it returns.
+        let _ = self.app.emit(STATUS_EVENT, status);
     }
 
     fn add(&self, mut spot: Spot) {

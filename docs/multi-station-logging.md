@@ -1,93 +1,72 @@
-# Multi-station shared logging (post v1.0)
+# Multi-station shared logging
 
 Design note for running OpenVKCL on several PCs against **one** contest log.
-Typical use: multi-op field day or club station, each PC on a **different band**.
+Typical use: multi-op field day or club station. Each PC logs on a **different band**.
+The PC that opens the log is the host. Other PCs join it on the LAN.
 
-Not scheduled for implementation before v1.0.
+## Decided
+
+- The link is on the LAN. Field day does not need the internet.
+- The host is the app that opens the log. New log and Open log make this PC the host, and it is the only process that writes the `.ovkcl`. Closing the log stops hosting.
+- A client joins that open log and does not open a file. Clients log, follow their own radio, and send contacts to the host.
+- Setup stays on the host: contest, categories, sent exchange, and generic options. Clients use that setup and do not change it.
+- A client can edit contacts on its own band. The host writes the change. A client cannot edit contacts on another station's band.
+- One station per band. A client cannot use a band the host or another client is already logging. The host cannot select a band a client is logging on. That includes the band control and the radio moving onto a taken band. A band stays taken while that station is joined, including across a dropped link. Leaving the shared log releases it.
+- If the link drops, the client keeps new contacts locally and sends them, in order, when the connection returns. The host allocates serials, applies the contest's dupe rules, and writes the file. The client does not write an `.ovkcl`.
+
+```mermaid
+flowchart LR
+  client["Client PC\nown band, own radio"]
+  cache["Local cache\nwhile the link is down"]
+  host["Host PC\nonly writer of the .ovkcl"]
+  client -->|LAN, link up| host
+  client -->|link down| cache
+  cache -->|link restored, in order| host
+```
 
 ## What we have today
 
 - One `.ovkcl` SQLite file, opened by a single process ([`src-tauri/src/store.rs`](../src-tauri/src/store.rs)).
 - QSOs are loaded into memory (`OpenLog.qsos`); scoring and dupes are recomputed in Rust on each change ([`src-tauri/src/contest/engine.rs`](../src-tauri/src/contest/engine.rs)).
-- No multi-writer, no sync, and no station identity beyond the QSO `operator` field.
+- Serials are the highest number already in that memory, plus one, per band when the contest says so (`next_sent_nr` in [`src-tauri/src/commands.rs`](../src-tauri/src/commands.rs)).
+- The per-contact `operator` column exists, but logging stores it blank. `Station.operators` is only the Cabrillo header list.
+- `view()` sends every row to the UI.
 
 Putting the file on a network share and opening it from two PCs will not work reliably (locking, stale in-memory state, serial races).
 
-## Contest reality
+## How a contact is logged
 
-| Concern | Different bands | Same band |
-| --- | --- | --- |
-| Dupes / rework | Usually independent | Must see each other’s QSOs live |
-| Serials | Often per-band already | One series needs a single allocator |
-| Score | Needs the full combined log | Same |
-| Rig | Per PC | Per PC |
+| Concern | Rule |
+| --- | --- |
+| Role | The app that opens the `.ovkcl` is the host. Join does not open a file. |
+| Band | One station per band. A client cannot take a band the host or another client is using, and the host cannot take a client's band. |
+| Dupes | The host sees the combined log. A contact cached while offline is checked when the host writes it. |
+| Serials | The host assigns the number when it writes, including contacts that waited in a client cache. |
+| Score | The host holds the combined log and runs the contest engine. |
+| Rig | Each PC keeps its own radio connection. |
+| Operator | Each client sets an operator call; the host stamps it on that client's contacts. |
+| Edits | A client can edit contacts on its band. The host writes the change. |
 
-Design for **multi-op, multi-band first**; same-band is the harder edge case.
+A global serial series stays consistent because only the host hands out numbers. A contact cached during an outage gets the next number at the moment the host writes it, after anything logged on the other bands while the link was down.
 
-## Options
+## What not to do
 
-```mermaid
-flowchart TB
-  subgraph bad [Avoid as primary]
-    smb["Shared .ovkcl on SMB/NFS"]
-  end
-  subgraph ok [Viable]
-    host["Host PC = log server\nothers = thin clients"]
-    sync["Event sync\nappend QSO ops to shared store"]
-  end
-  smb -->|"fragile locks / stale UI"| fail[Corruption or missed dupes]
-  host --> lan[LAN WebSocket or HTTP]
-  sync --> lan
-```
+- A shared folder `.ovkcl` on SMB or NFS. SQLite over those shares corrupts or misses dupes.
+- One file per band, merged only at Cabrillo time. Live dupes and the score need the combined log.
+- Peer sync, where every PC writes and the logs merge later. Serials and conflicts belong on the host.
+- A cloud service. The LAN is the connection.
 
-### 1. Shared file on a network drive — not the main design
+## What the app does
 
-SQLite over SMB/NFS is a known footgun. Possible only as a desperate “export only” path, not for live multi-op.
+1. The PC that opens the log listens, and a second PC can send a contact that is written into that file.
+2. One station per band, in both directions. Dupes, serials, and the score come from the host. A client keeps contacts in order while the host cannot be reached, and sends them when the same host is back.
+3. A client can edit and delete contacts on its own band. Setup stays on the host. Cabrillo, ADIF, and the score sheet can be pulled.
+4. A scoreboard is a client that never claims a band.
 
-### 2. Host / clients on the LAN — best fit for OpenVKCL
+## Decided
 
-- One PC **owns** the `.ovkcl` (or runs a small local service).
-- Other PCs connect as clients: log QSOs, receive score/dupe updates, keep their own radio link.
-- The host runs the existing contest engine; clients are UI + rig + “submit QSO”.
-
-**Pros:** one writer, correct serials/dupes/score, reuses today’s model.  
-**Cons:** host must stay up; need discovery (e.g. mDNS) and basic LAN auth.
-
-### 3. Peer sync of QSO events — more flexible, more work
-
-Each PC writes locally; append-only events merge (by id/time). The engine re-runs on the merged set.
-
-**Pros:** no single host.  
-**Cons:** serial allocation and conflict UX get hard; overkill if one shack PC can be the host.
-
-## Recommended direction
-
-**LAN host + clients**, with these rules:
-
-1. **Open** — “Share this log on the LAN” on the host; others “Join shared log…”.
-2. **Writes** — only the host inserts/updates/deletes; clients send commands.
-3. **Reads** — host pushes log version / delta (aligned with sending less of the log to the UI).
-4. **Serials** — host allocates; per-band serial contests stay simple; a global series stays consistent.
-5. **Operator** — each client sets an operator call; stamped on QSOs.
-6. **Band** — each client follows its own radio; UI can highlight “your band” vs the full log.
-7. **Offline** — if the host drops, clients queue or go read-only (decide explicitly when building).
-
-## What not to do early
-
-- Don’t make “shared folder `.ovkcl`” the product promise.
-- Don’t split into one file per band and merge only at Cabrillo time — live dupes and score suffer.
-- Don’t require cloud or internet for a field-day LAN.
-
-## Phases after v1.0
-
-1. **Doc + spike** — host command API: `log_qso` / `get_view` over localhost, then LAN.
-2. **MVP** — two clients, different bands, live dupes + serials + score; operator field.
-3. **Hardening** — reconnect, host failover story, same-band warnings, setup locked to the host.
-4. **Optional** — read-only “scoreboard” tablet.
-
-## Open decisions (when this is picked up)
-
-- UDP/mDNS discovery vs paste `host:port`.
-- Whether setup (categories, sent exchange) is host-only.
-- Whether clients may edit/delete any QSO or only their own.
-- Cabrillo/ADIF only from the host, or from any client as a pull.
+- The open log sends a UDP beacon about once a second on port 7375, with the TCP port, contest name, and callsign. Join lists what it hears. A typed `host:port` still works when broadcasts are dropped. The TCP port is 7374 unless that port is already taken.
+- A client may delete a contact on its own band. The host writes the delete. A client cannot delete another station's band.
+- A client can pull Cabrillo, ADIF, and the score sheet. The host renders the text and the client saves the file. ADIF import stays on the host.
+- A cached contact the host marks as a duplicate is still logged, with no points, and the client is told. A contact the host refuses is dropped from the queue and the reason is shown.
+- A scoreboard joins with no band. It sees the log and cannot log or edit.

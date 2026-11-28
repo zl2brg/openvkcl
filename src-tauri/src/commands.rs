@@ -6,6 +6,7 @@ use crate::dxcc::{self, Country, Cty};
 use crate::export::{adif, cabrillo, scoresheet};
 use crate::import::{self, ImportSummary};
 use crate::model::{LogSetup, Qso, QsoInput};
+use crate::multi::{self, Bands, HostOps, Offer};
 use crate::qrz::{Qrz, QrzConfig, QrzInfo};
 use crate::rig::hamlib::{self, RigModel, SerialPort};
 use crate::rig::{Rig, RigConfig, RigKind, RigStatus, flex, tci};
@@ -15,6 +16,7 @@ use crate::store::Store;
 use crate::{callsign, geo, modes};
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, State};
@@ -91,7 +93,7 @@ pub enum Changed {
 }
 
 pub struct AppState {
-    pub log: Mutex<Option<OpenLog>>,
+    pub log: Arc<Mutex<Option<OpenLog>>>,
     pub contests: Mutex<Vec<ContestDef>>,
     pub contest_errors: Mutex<Vec<String>>,
     pub contest_dir: PathBuf,
@@ -102,21 +104,25 @@ pub struct AppState {
     pub rig: Arc<Rig>,
     pub scp: Mutex<Scp>,
     pub scp_path: PathBuf,
-    pub cty: Mutex<Cty>,
+    pub cty: Arc<Mutex<Cty>>,
+    /// Host listener for the open log, or the client link to someone else's.
+    pub multi: multi::Share,
     pub cty_path: PathBuf,
     pub qrz: Qrz,
     pub cluster: Cluster,
 }
 
 impl AppState {
-    pub fn new(config_dir: &Path) -> Self {
+    /// `config_dir` is shared by every copy (lookups and contest definitions).
+    /// `files_dir` belongs to this copy (settings, radio, and the client queue).
+    pub fn new(config_dir: &Path, files_dir: &Path) -> Self {
         let contest_dir = config_dir.join("contests");
         let (defs, errors) = contest::load_with_lists(Some(&contest_dir), Some(config_dir));
-        let settings_path = config_dir.join("settings.json");
+        let settings_path = files_dir.join("settings.json");
         let scp_path = config_dir.join("MASTER.SCP");
         let cty_path = config_dir.join("cty.csv");
         AppState {
-            log: Mutex::new(None),
+            log: Arc::new(Mutex::new(None)),
             contests: Mutex::new(defs),
             contest_errors: Mutex::new(errors),
             contest_dir,
@@ -126,7 +132,8 @@ impl AppState {
             rig: Arc::new(Rig::default()),
             scp: Mutex::new(Scp::load(&scp_path)),
             scp_path,
-            cty: Mutex::new(Cty::load(&cty_path)),
+            cty: Arc::new(Mutex::new(Cty::load(&cty_path))),
+            multi: multi::Share::new(files_dir.join("multi-queue.json")),
             cty_path,
             qrz: Qrz::default(),
             cluster: Cluster::default(),
@@ -421,7 +428,11 @@ fn exch_code(def: &ContestDef, s: &str) -> String {
     }
 }
 
-fn draft_qso(log: &OpenLog, input: &QsoInput) -> Qso {
+fn host_operator(log: &OpenLog) -> String {
+    log.setup.station.callsign.trim().to_ascii_uppercase()
+}
+
+fn draft_qso(log: &OpenLog, input: &QsoInput, operator: &str) -> Qso {
     let rst = |s: &str| {
         if s.trim().is_empty() {
             modes::default_rst(&input.mode).to_string()
@@ -447,7 +458,7 @@ fn draft_qso(log: &OpenLog, input: &QsoInput) -> Qso {
         rcvd_rst: if log.def.has_field(ExchField::Rst) { rst(&input.rcvd_rst) } else { String::new() },
         rcvd_nr: input.rcvd_nr.trim().to_string(),
         rcvd_locator: geo::normalize_locator(&input.rcvd_locator),
-        operator: String::new(),
+        operator: operator.trim().to_ascii_uppercase(),
         sent_exch: if log.def.has_field(ExchField::Number) {
             exch_code(&log.def, &log.setup.sent_number)
         } else if log.def.has_field(ExchField::Text) {
@@ -495,8 +506,22 @@ pub fn save_settings(state: State<AppState>, settings: Settings) -> CmdResult<()
     Ok(())
 }
 
+fn begin_sharing(state: &AppState) {
+    let log = Arc::clone(&state.log);
+    let cty = Arc::clone(&state.cty);
+    match state.multi.open_sharing(&move |bands| {
+        Arc::new(AppOps { log: Arc::clone(&log), cty: Arc::clone(&cty), bands }) as Arc<dyn HostOps>
+    }) {
+        Ok(_) => state.multi.announce(),
+        Err(e) => state.multi.set_error(e),
+    }
+}
+
 #[tauri::command]
 pub fn new_log(state: State<AppState>, path: String, setup: LogSetup) -> CmdResult<LogView> {
+    if state.multi.is_client() {
+        return Err("Leave the shared log before opening one on this PC".into());
+    }
     let def = state.contest_for(&setup)?;
     let path = PathBuf::from(path);
     let store = Store::create(&path, &setup)?;
@@ -504,11 +529,15 @@ pub fn new_log(state: State<AppState>, path: String, setup: LogSetup) -> CmdResu
     let v = view(&mut log, &state.cty.lock().unwrap());
     *state.log.lock().unwrap() = Some(log);
     state.remember_log(&path);
+    begin_sharing(&state);
     Ok(v)
 }
 
 #[tauri::command]
 pub fn open_log(state: State<AppState>, path: String) -> CmdResult<LogView> {
+    if state.multi.is_client() {
+        return Err("Leave the shared log before opening one on this PC".into());
+    }
     let path = PathBuf::from(path);
     let (store, setup) = Store::open(&path)?;
     let def = state.contest_for(&setup)?;
@@ -526,11 +555,13 @@ pub fn open_log(state: State<AppState>, path: String) -> CmdResult<LogView> {
     drop(cty);
     *state.log.lock().unwrap() = Some(log);
     state.remember_log(&path);
+    begin_sharing(&state);
     Ok(v)
 }
 
 #[tauri::command]
 pub fn close_log(state: State<AppState>) {
+    state.multi.stop_host();
     *state.log.lock().unwrap() = None;
 }
 
@@ -541,20 +572,40 @@ pub fn get_log(state: State<AppState>) -> Option<LogView> {
 
 #[tauri::command]
 pub fn update_setup(state: State<AppState>, setup: LogSetup) -> CmdResult<LogView> {
+    if state.multi.is_client() {
+        return Err("Setup stays on the host".into());
+    }
     let def = state.contest_for(&setup)?;
-    with_log(&state, |log| {
+    let updated = with_log(&state, |log| {
         log.store.save_setup(&setup)?;
         log.setup = setup;
         log.def = def;
         log.changed();
         Ok(view(log, &state.cty.lock().unwrap()))
-    })
+    })?;
+    state.multi.publish();
+    Ok(updated)
 }
 
 #[tauri::command]
-pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<CheckResult> {
-    with_log(&state, |log| {
-        let mut draft = draft_qso(log, &input);
+pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<Value> {
+    if state.multi.is_client() {
+        return state.multi.submit(multi::Submit::Check(input));
+    }
+    let result = check_local(&state, input)?;
+    to_json(&result)
+}
+
+fn check_local(state: &AppState, input: QsoInput) -> CmdResult<CheckResult> {
+    let mut guard = state.log.lock().unwrap();
+    let log = guard.as_mut().ok_or("No log is open")?;
+    let cty = state.cty.lock().unwrap();
+    check_open(log, &cty, &input)
+}
+
+fn check_open(log: &mut OpenLog, cty: &Cty, input: &QsoInput) -> CmdResult<CheckResult> {
+    {
+        let mut draft = draft_qso(log, input, "");
         let call = draft.call.clone();
         let known_locator = log
             .qsos
@@ -584,7 +635,6 @@ pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<CheckResu
             .rev()
             .find(|q| q.call == call && !q.details.name.is_empty())
             .map(|q| q.details.name.clone());
-        let cty = state.cty.lock().unwrap();
         let (result, results, dx) = if log.def.general {
             // Nothing to score: skip evaluating what could be a very long log.
             let dx = (!call.is_empty()).then(|| dx_check(log, &cty, &draft)).flatten();
@@ -615,72 +665,105 @@ pub fn check_qso(state: State<AppState>, input: QsoInput) -> CmdResult<CheckResu
             dx,
             previous,
         })
-    })
+    }
 }
 
-#[tauri::command]
-pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<Logged> {
-    with_log(&state, |log| {
-        if !callsign::is_plausible(&input.call) {
-            return Err(format!("'{}' is not a valid callsign", input.call.trim()));
+fn to_json<T: Serialize>(value: &T) -> CmdResult<Value> {
+    serde_json::to_value(value).map_err(|e| e.to_string())
+}
+
+/// Write one contact and return what the UI should show, plus the stored contact.
+fn store_contact(log: &mut OpenLog, cty: &Cty, input: &QsoInput, operator: &str) -> CmdResult<(Logged, Qso)> {
+    if !callsign::is_plausible(&input.call) {
+        return Err(format!("'{}' is not a valid callsign", input.call.trim()));
+    }
+    if input.band.is_empty() || input.mode.is_empty() {
+        return Err("Choose a band and mode".into());
+    }
+    for (which, rst) in [("RST sent", &input.sent_rst), ("RST rcvd", &input.rcvd_rst)] {
+        if let Some(why) = modes::check_report(&input.mode, rst) {
+            return Err(format!("{which} {why}"));
         }
-        if input.band.is_empty() || input.mode.is_empty() {
-            return Err("Choose a band and mode".into());
-        }
-        for (which, rst) in [("RST sent", &input.sent_rst), ("RST rcvd", &input.rcvd_rst)] {
-            if let Some(why) = modes::check_report(&input.mode, rst) {
-                return Err(format!("{which} {why}"));
-            }
-        }
-        let mut q = draft_qso(log, &input);
-        if log.def.general {
-            q.details.dxcc = state.cty.lock().unwrap().lookup(&q.call).map(|c| c.dxcc);
-        }
-        q.id = log.store.insert(&q)?;
-        let rig = state.settings.lock().unwrap().rig.clone();
-        if rig.spots
-            && let Some(khz) = q.freq_khz
-        {
-            let hz = (khz * 1000.0).round() as u64;
-            let text = format!("worked {} {}", q.band, q.time.format("%H%MZ"));
-            let mode = tci::spot_mode(modes::contest(&q.mode), hz);
-            match rig.kind {
-                RigKind::Tci => state.rig.send(tci::spot(&q.call, mode, hz, &text)),
-                RigKind::Flex => state.rig.send(flex::spot(&q.call, &mode.to_ascii_uppercase(), hz, &text)),
-                _ => {}
-            }
-        }
-        let cty = state.cty.lock().unwrap();
-        // A general log's other rows only change if this contact goes before
-        // them (a time entered by hand), which can move a country's NEW badge.
-        let newest = log.qsos.last().is_none_or(|last| (last.time, last.id) < (q.time, q.id));
-        if log.def.general && newest {
-            let country = country_of(&cty, &q);
-            let new_dxcc = country
-                .as_ref()
-                .is_some_and(|c| !log.qsos.iter().any(|p| dxcc_of(&cty, p) == Some(c.dxcc)));
-            log.qsos.push(q.clone());
-            log.changed();
-            return Ok(Logged::Row {
-                row: Box::new(QsoRow {
-                    qso: q,
-                    result: QsoResult::default(),
-                    country,
-                    new_dxcc,
-                }),
-            });
-        }
-        log.qsos.push(q);
-        log.qsos.sort_by_key(|q| (q.time, q.id));
+    }
+    let mut q = draft_qso(log, input, operator);
+    if log.def.general {
+        q.details.dxcc = cty.lookup(&q.call).map(|c| c.dxcc);
+    }
+    q.id = log.store.insert(&q)?;
+    let stored = q.clone();
+    // A general log's other rows only change if this contact goes before
+    // them (a time entered by hand), which can move a country's NEW badge.
+    let newest = log.qsos.last().is_none_or(|last| (last.time, last.id) < (q.time, q.id));
+    if log.def.general && newest {
+        let country = country_of(cty, &q);
+        let new_dxcc = country.as_ref().is_some_and(|c| !log.qsos.iter().any(|p| dxcc_of(cty, p) == Some(c.dxcc)));
+        log.qsos.push(q.clone());
         log.changed();
-        Ok(Logged::View { view: Box::new(view(log, &cty)) })
-    })
+        return Ok((
+            Logged::Row {
+                row: Box::new(QsoRow { qso: q, result: QsoResult::default(), country, new_dxcc }),
+            },
+            stored,
+        ));
+    }
+    log.qsos.push(q);
+    log.qsos.sort_by_key(|q| (q.time, q.id));
+    log.changed();
+    Ok((Logged::View { view: Box::new(view(log, cty)) }, stored))
+}
+
+fn spot_worked(state: &AppState, q: &Qso) {
+    let rig = state.settings.lock().unwrap().rig.clone();
+    if rig.spots
+        && let Some(khz) = q.freq_khz
+    {
+        let hz = (khz * 1000.0).round() as u64;
+        let text = format!("worked {} {}", q.band, q.time.format("%H%MZ"));
+        let mode = tci::spot_mode(modes::contest(&q.mode), hz);
+        match rig.kind {
+            RigKind::Tci => state.rig.send(tci::spot(&q.call, mode, hz, &text)),
+            RigKind::Flex => state.rig.send(flex::spot(&q.call, &mode.to_ascii_uppercase(), hz, &text)),
+            _ => {}
+        }
+    }
 }
 
 #[tauri::command]
-pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Changed> {
-    with_log(&state, |log| {
+pub fn log_qso(state: State<AppState>, input: QsoInput) -> CmdResult<Value> {
+    if state.multi.is_client() {
+        return state.multi.submit(multi::Submit::Log(input));
+    }
+    state.multi.claim_host_band(&input.band)?;
+    let operator = state.log.lock().unwrap().as_ref().map(host_operator).unwrap_or_default();
+    let (logged, qso) = {
+        let mut guard = state.log.lock().unwrap();
+        let log = guard.as_mut().ok_or("No log is open")?;
+        let cty = state.cty.lock().unwrap();
+        store_contact(log, &cty, &input, &operator)?
+    };
+    spot_worked(&state, &qso);
+    state.multi.publish();
+    to_json(&logged)
+}
+
+#[tauri::command]
+pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Value> {
+    if state.multi.is_client() {
+        return state.multi.submit(multi::Submit::Edit(qso));
+    }
+    let changed = apply_edit(&state.log, &state.cty, qso, None)?;
+    state.multi.publish();
+    to_json(&changed)
+}
+
+fn apply_edit(logs: &Arc<Mutex<Option<OpenLog>>>, countries: &Arc<Mutex<Cty>>, qso: Qso, remote: Option<&str>) -> CmdResult<Changed> {
+    let mut guard = logs.lock().unwrap();
+    let log = guard.as_mut().ok_or("No log is open")?;
+    {
         let mut qso = qso;
+        if let Some(op) = remote {
+            qso.operator = op.trim().to_ascii_uppercase();
+        }
         qso.call = callsign::normalize(&qso.call);
         qso.rcvd_locator = geo::normalize_locator(&qso.rcvd_locator);
         qso.sent_locator = geo::normalize_locator(&qso.sent_locator);
@@ -708,7 +791,7 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Changed> {
                 qso.details.adif.remove(k);
             }
             qso.details.dxcc = if log.def.general {
-                state.cty.lock().unwrap().lookup(&qso.call).map(|c| c.dxcc)
+                countries.lock().unwrap().lookup(&qso.call).map(|c| c.dxcc)
             } else {
                 None
             };
@@ -716,7 +799,7 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Changed> {
         // A new time can move the contact, so only an edit in place sends just rows.
         let moved = stored.time != qso.time;
         log.store.update(&qso)?;
-        let cty = state.cty.lock().unwrap();
+        let cty = countries.lock().unwrap();
         let before = first_of_country(log, &cty);
         let id = qso.id;
         let slot = log
@@ -733,7 +816,7 @@ pub fn update_qso(state: State<AppState>, qso: Qso) -> CmdResult<Changed> {
         Ok(Changed::View {
             view: Box::new(view(log, &cty)),
         })
-    })
+    }
 }
 
 /// The rows of a general log that an edit or delete changed: `edited`, and any
@@ -755,33 +838,76 @@ fn changed_rows(
     Changed::Rows { rows, removed }
 }
 
+fn apply_delete(logs: &Arc<Mutex<Option<OpenLog>>>, countries: &Arc<Mutex<Cty>>, id: i64) -> CmdResult<Changed> {
+    let mut guard = logs.lock().unwrap();
+    let log = guard.as_mut().ok_or("No log is open")?;
+    log.store.delete(id)?;
+    let cty = countries.lock().unwrap();
+    let before = first_of_country(log, &cty);
+    log.qsos.retain(|q| q.id != id);
+    log.changed();
+    if log.def.general {
+        return Ok(changed_rows(log, &cty, &before, None, Some(id)));
+    }
+    // A contest log is scored again: other contacts' dupes and multipliers can change.
+    Ok(Changed::View { view: Box::new(view(log, &cty)) })
+}
+
 #[tauri::command]
-pub fn delete_qso(state: State<AppState>, id: i64) -> CmdResult<Changed> {
-    with_log(&state, |log| {
-        log.store.delete(id)?;
-        let cty = state.cty.lock().unwrap();
-        let before = first_of_country(log, &cty);
-        log.qsos.retain(|q| q.id != id);
-        log.changed();
-        if log.def.general {
-            return Ok(changed_rows(log, &cty, &before, None, Some(id)));
+pub fn delete_qso(state: State<AppState>, id: i64) -> CmdResult<Value> {
+    if state.multi.is_client() {
+        return state.multi.submit(multi::Submit::Delete(id));
+    }
+    let changed = apply_delete(&state.log, &state.cty, id)?;
+    state.multi.publish();
+    to_json(&changed)
+}
+
+#[tauri::command]
+fn when_of(text: Option<String>) -> CmdResult<Option<DateTime<Utc>>> {
+    match text {
+        None => Ok(None),
+        Some(t) if t.is_empty() => Ok(None),
+        Some(t) => DateTime::parse_from_rfc3339(&t).map(|d| Some(d.with_timezone(&Utc))).map_err(|e| e.to_string()),
+    }
+}
+
+fn export_body(log: &OpenLog, cty: &Cty, kind: &str, from: Option<DateTime<Utc>>, to: Option<DateTime<Utc>>) -> CmdResult<Value> {
+    match kind {
+        "cabrillo" => {
+            if log.def.general {
+                return Err("General logs have no contest entry to export".into());
+            }
+            let eval = engine::evaluate(&log.def, &log.setup, &log.qsos);
+            Ok(json!({"text": cabrillo::render(&log.def, &log.setup, &log.qsos, &eval.score, VERSION), "count": log.qsos.len()}))
         }
-        // A contest log is scored again: other contacts' dupes and multipliers can change.
-        Ok(Changed::View {
-            view: Box::new(view(log, &cty)),
-        })
-    })
+        "adif" => {
+            let qsos: Vec<Qso> = log.qsos.iter().filter(|q| in_range(q.time, from, to)).cloned().collect();
+            let count = qsos.len();
+            Ok(json!({"text": adif::render(&log.def, &log.setup, &qsos, cty, VERSION), "count": count}))
+        }
+        "scoresheet" => {
+            if log.def.general {
+                return Err("General logs have no contest entry to export".into());
+            }
+            let eval = engine::evaluate(&log.def, &log.setup, &log.qsos);
+            Ok(json!({"text": scoresheet::render(&log.def, &log.setup, &log.qsos, &eval), "count": log.qsos.len()}))
+        }
+        other => Err(format!("Unknown export '{other}'")),
+    }
+}
+
+fn export_text(body: &Value) -> String {
+    body.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string()
 }
 
 #[tauri::command]
 pub fn cabrillo_text(state: State<AppState>) -> CmdResult<String> {
-    with_log(&state, |log| {
-        if log.def.general {
-            return Err("General logs have no contest entry to export".into());
-        }
-        let eval = engine::evaluate(&log.def, &log.setup, &log.qsos);
-        Ok(cabrillo::render(&log.def, &log.setup, &log.qsos, &eval.score, VERSION))
-    })
+    if state.multi.is_client() {
+        let body = state.multi.submit(multi::Submit::Export { kind: "cabrillo".into(), from: None, to: None })?;
+        return Ok(export_text(&body));
+    }
+    with_log(&state, |log| Ok(export_text(&export_body(log, &state.cty.lock().unwrap(), "cabrillo", None, None)?)))
 }
 
 #[tauri::command]
@@ -802,11 +928,19 @@ pub fn export_adif(
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
 ) -> CmdResult<usize> {
-    let (text, n) = with_log(&state, |log| {
-        let qsos: Vec<Qso> = log.qsos.iter().filter(|q| in_range(q.time, from, to)).cloned().collect();
-        let cty = state.cty.lock().unwrap();
-        Ok((adif::render(&log.def, &log.setup, &qsos, &cty, VERSION), qsos.len()))
-    })?;
+    let (text, n) = if state.multi.is_client() {
+        let body = state.multi.submit(multi::Submit::Export {
+            kind: "adif".into(),
+            from: from.map(|t| t.to_rfc3339()),
+            to: to.map(|t| t.to_rfc3339()),
+        })?;
+        (export_text(&body), body.get("count").and_then(|n| n.as_u64()).unwrap_or(0) as usize)
+    } else {
+        with_log(&state, |log| {
+            let body = export_body(log, &state.cty.lock().unwrap(), "adif", from, to)?;
+            Ok((export_text(&body), body.get("count").and_then(|n| n.as_u64()).unwrap_or(0) as usize))
+        })?
+    };
     std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))?;
     Ok(n)
 }
@@ -819,12 +953,15 @@ pub fn import_adif(
     from: Option<DateTime<Utc>>,
     to: Option<DateTime<Utc>>,
 ) -> CmdResult<ImportResult> {
+    if state.multi.is_client() {
+        return Err("Import an ADIF file on the host".into());
+    }
     let bytes = std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?;
     let records = import::parse(&bytes);
     if records.is_empty() {
         return Err("No contacts found: is this an ADIF (.adi) file?".into());
     }
-    with_log(&state, |log| {
+    let imported = with_log(&state, |log| {
         let (mut qsos, summary) = import::select(&records, &log.def, &log.setup, &log.qsos, from, to);
         if log.def.general {
             let cty = state.cty.lock().unwrap();
@@ -840,18 +977,18 @@ pub fn import_adif(
             summary,
             view: view(log, &state.cty.lock().unwrap()),
         })
-    })
+    })?;
+    state.multi.publish();
+    Ok(imported)
 }
 
 #[tauri::command]
 pub fn export_score_sheet(state: State<AppState>, path: String) -> CmdResult<()> {
-    let text = with_log(&state, |log| {
-        if log.def.general {
-            return Err("General logs have no contest entry to export".into());
-        }
-        let eval = engine::evaluate(&log.def, &log.setup, &log.qsos);
-        Ok(scoresheet::render(&log.def, &log.setup, &log.qsos, &eval))
-    })?;
+    let text = if state.multi.is_client() {
+        export_text(&state.multi.submit(multi::Submit::Export { kind: "scoresheet".into(), from: None, to: None })?)
+    } else {
+        with_log(&state, |log| Ok(export_text(&export_body(log, &state.cty.lock().unwrap(), "scoresheet", None, None)?)))?
+    };
     std::fs::write(&path, text).map_err(|e| format!("{path}: {e}"))
 }
 
@@ -1149,6 +1286,151 @@ pub fn code_list_import(state: State<AppState>, file: String, path: String) -> C
     install_code_list(&state, &file, &bytes)
 }
 
+struct AppOps {
+    log: Arc<Mutex<Option<OpenLog>>>,
+    cty: Arc<Mutex<Cty>>,
+    bands: Arc<Mutex<Bands>>,
+}
+
+fn reject_other_band(bands: &Bands, client: u32, stored_band: &str, new_band: &str) -> Result<(), String> {
+    let own = bands.client_band(client)?;
+    if crate::bands::canonical(stored_band) != own || crate::bands::canonical(new_band) != own {
+        Err("A station can only change contacts on its own band".into())
+    } else {
+        Ok(())
+    }
+}
+
+impl HostOps for AppOps {
+    fn offer(&self) -> Offer {
+        let (contest, call, bands) = {
+            let guard = self.log.lock().unwrap();
+            match guard.as_ref() {
+                Some(log) => (log.def.name.clone(), host_operator(log), log.def.bands.clone()),
+                None => (String::new(), String::new(), Vec::new()),
+            }
+        };
+        Offer { contest, call: call.clone(), bands, stations: self.bands.lock().unwrap().stations(&call) }
+    }
+
+    fn view(&self) -> Result<Value, String> {
+        let mut guard = self.log.lock().unwrap();
+        let log = guard.as_mut().ok_or("No log is open")?;
+        to_json(&view(log, &self.cty.lock().unwrap()))
+    }
+
+    fn log(&self, operator: &str, input: QsoInput) -> Result<Value, String> {
+        let mut guard = self.log.lock().unwrap();
+        let log = guard.as_mut().ok_or("No log is open")?;
+        let (logged, _) = store_contact(log, &self.cty.lock().unwrap(), &input, operator)?;
+        to_json(&logged)
+    }
+
+    fn edit(&self, operator: &str, client: u32, qso: Qso) -> Result<Value, String> {
+        let stored = {
+            let guard = self.log.lock().unwrap();
+            let log = guard.as_ref().ok_or("No log is open")?;
+            log.qsos.iter().find(|q| q.id == qso.id).map(|q| q.band.clone()).ok_or("QSO not found")?
+        };
+        reject_other_band(&self.bands.lock().unwrap(), client, &stored, &qso.band)?;
+        to_json(&apply_edit(&self.log, &self.cty, qso, Some(operator))?)
+    }
+
+    fn delete(&self, _operator: &str, client: u32, id: i64) -> Result<Value, String> {
+        let stored = {
+            let guard = self.log.lock().unwrap();
+            let log = guard.as_ref().ok_or("No log is open")?;
+            log.qsos.iter().find(|q| q.id == id).map(|q| q.band.clone()).ok_or("QSO not found")?
+        };
+        reject_other_band(&self.bands.lock().unwrap(), client, &stored, &stored)?;
+        to_json(&apply_delete(&self.log, &self.cty, id)?)
+    }
+
+    fn check(&self, input: QsoInput) -> Result<Value, String> {
+        let mut guard = self.log.lock().unwrap();
+        let log = guard.as_mut().ok_or("No log is open")?;
+        to_json(&check_open(log, &self.cty.lock().unwrap(), &input)?)
+    }
+
+    fn export(&self, kind: &str, from: Option<String>, to: Option<String>) -> Result<Value, String> {
+        let guard = self.log.lock().unwrap();
+        let log = guard.as_ref().ok_or("No log is open")?;
+        export_body(log, &self.cty.lock().unwrap(), kind, when_of(from)?, when_of(to)?)
+    }
+
+    fn label(&self) -> (String, String) {
+        let guard = self.log.lock().unwrap();
+        match guard.as_ref() {
+            Some(log) => (log.def.name.clone(), host_operator(log)),
+            None => (String::new(), String::new()),
+        }
+    }
+}
+
+#[tauri::command]
+pub fn multi_status(state: State<AppState>) -> multi::MultiStatus {
+    state.multi.status()
+}
+
+#[tauri::command]
+pub fn multi_join(state: State<AppState>, addr: String, operator: String, band: String) -> CmdResult<()> {
+    state.multi.join(&addr, &operator, &band)
+}
+
+#[tauri::command]
+pub fn multi_leave(state: State<AppState>) {
+    state.multi.leave();
+}
+
+#[tauri::command]
+pub fn multi_peek(addr: String) -> CmdResult<Offer> {
+    multi::peek(&addr)
+}
+
+#[tauri::command]
+pub fn multi_discover() -> CmdResult<Vec<multi::Found>> {
+    multi::discover(std::time::Duration::from_millis(1200))
+}
+
+#[tauri::command]
+pub fn multi_claim_band(state: State<AppState>, band: String) -> CmdResult<()> {
+    if state.multi.is_client() {
+        state.multi.submit(multi::Submit::Band(band))?;
+        return Ok(());
+    }
+    state.multi.claim_host_band(&band)?;
+    state.multi.announce();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn multi_discard(state: State<AppState>) {
+    state.multi.discard_queue();
+}
+
+/// Send sharing events to the window. Called once, while the app is starting.
+pub fn watch_sharing(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    let handle = app.clone();
+    app.state::<AppState>().multi.set_listener(Arc::new(move |event| {
+        let handle = handle.clone();
+        // Opening the log emits from inside the web view's IPC callback. Calling
+        // back into that view before the callback returns deadlocks WebKitGTK:
+        // the clock stops and no button runs. Hand the event to the runtime
+        // first, the same way radio status does.
+        tauri::async_runtime::spawn(async move {
+            let _ = match event {
+                multi::ShareEvent::View { view, stations } => {
+                    handle.emit("multi-view", json!({ "view": view, "stations": stations }))
+                }
+                multi::ShareEvent::Status(status) => handle.emit("multi-status", status),
+                multi::ShareEvent::Stations(stations) => handle.emit("multi-stations", stations),
+                multi::ShareEvent::Notice { text, error } => handle.emit("multi-notice", json!({ "text": text, "error": error })),
+            };
+        });
+    }));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1269,5 +1551,56 @@ mod tests {
         assert_eq!(log.evaluation().score.qsos, 1);
         log.changed();
         assert_eq!(log.evaluation().score.qsos, 2);
+    }
+
+    #[test]
+    fn a_client_contact_is_written_into_the_log_file() {
+        let dir = std::env::temp_dir().join(format!("openvkcl-share-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let state = AppState::new(&dir, &dir);
+        let def = state.contests.lock().unwrap().iter().find(|d| d.id == "general").unwrap().clone();
+        let setup = LogSetup {
+            contest_id: "general".into(),
+            start: Utc::now(),
+            station: Station { callsign: "VK3AAA".into(), ..Default::default() },
+            sent_number: String::new(),
+            serial_per_band: false,
+            utc_offset_minutes: 600,
+            location: String::new(),
+            categories: Default::default(),
+            bonus_bands: Default::default(),
+            soapbox: String::new(),
+            generic: Default::default(),
+        };
+        let path = dir.join("field.ovkcl");
+        let prepared = def.prepare(&setup);
+        let store = Store::create(&path, &setup).unwrap();
+        *state.log.lock().unwrap() = Some(OpenLog::new(path.clone(), store, setup, prepared, Vec::new()));
+        begin_sharing(&state);
+        let port = state.multi.port().expect("host is listening");
+        let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(3))).unwrap();
+        let mut reader = std::io::BufReader::new(stream.try_clone().unwrap());
+        let mut line = String::new();
+        use std::io::{BufRead, Write};
+        reader.read_line(&mut line).unwrap();
+        writeln!(stream, r#"{{"op":"join","operator":"ZL2BRG","band":"40m"}}"#).unwrap();
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        assert!(line.contains("joined"), "{line}");
+        writeln!(stream, r#"{{"op":"log","tag":"1","input":{{"call":"VK2ABC","band":"40m","mode":"CW"}}}}"#).unwrap();
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        assert!(line.contains("\"op\":\"ok\""), "{line}");
+        drop(stream);
+        state.multi.shutdown();
+        let (store, _) = Store::open(&path).unwrap();
+        let saved = store.qsos().unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].call, "VK2ABC");
+        assert_eq!(saved[0].operator, "ZL2BRG");
+        assert_eq!(saved[0].band, "40m");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

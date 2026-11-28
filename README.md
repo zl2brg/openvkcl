@@ -192,7 +192,7 @@ submenu exists (KDE with `extra-xdg-menus`), otherwise under Internet.
 
 How the five distance-scored contests turn a locator pair into points is
 described in [Radial distance scoring](docs/radial-distance-scoring.md).
-A post-v1.0 sketch for several PCs sharing one log is in
+Several PCs can share one log on the LAN. See
 [Multi-station shared logging](docs/multi-station-logging.md).
 The other contests award fixed points.
 

@@ -1590,9 +1590,18 @@ mod tests {
         reader.read_line(&mut line).unwrap();
         assert!(line.contains("joined"), "{line}");
         writeln!(stream, r#"{{"op":"log","tag":"1","input":{{"call":"VK2ABC","band":"40m","mode":"CW"}}}}"#).unwrap();
-        line.clear();
-        reader.read_line(&mut line).unwrap();
-        assert!(line.contains("\"op\":\"ok\""), "{line}");
+        // Joining publishes the station list before the contact is acknowledged.
+        let mut saw_ok = false;
+        for _ in 0..6 {
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            if line.contains("\"op\":\"ok\"") {
+                saw_ok = true;
+                break;
+            }
+            assert!(line.contains("\"op\":\"stations\""), "{line}");
+        }
+        assert!(saw_ok, "host did not acknowledge the contact");
         drop(stream);
         state.multi.shutdown();
         let (store, _) = Store::open(&path).unwrap();
